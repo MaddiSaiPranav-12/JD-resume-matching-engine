@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>File Upload Test</title>
+</head>
+<body>
+    <h1>Multiple File Upload Test</h1>
+    
+    <input type="file" id="testFiles" multiple accept=".pdf,.txt,.docx">
+    <div id="fileCount">0 files selected</div>
+    <div id="fileList"></div>
+    
+    <script>
+        document.getElementById('testFiles').addEventListener('change', function(e) {
+            console.log('Files selected:', e.target.files.length);
+            console.log('Files object:', e.target.files);
+            
+            const files = Array.from(e.target.files);
+            console.log('Files array:', files);
+            
+            document.getElementById('fileCount').textContent = `${files.length} files selected`;
+            
+            const fileList = files.map(f => `<div>${f.name} (${f.size} bytes)</div>`).join('');
+            document.getElementById('fileList').innerHTML = fileList;
+        });
+    </script>
+</body>
+</html>

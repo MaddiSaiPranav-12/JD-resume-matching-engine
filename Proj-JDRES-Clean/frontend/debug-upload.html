@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Multiple File Upload</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+        button { padding: 10px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Debug Multiple File Upload</h1>
+    
+    <div class="debug">
+        <h3>File Input Test</h3>
+        <input type="file" id="fileInput" multiple accept=".pdf,.txt,.docx">
+        <div id="fileCount">0 files selected</div>
+        <div id="fileDetails"></div>
+    </div>
+    
+    <div class="debug">
+        <button onclick="testInput()">Test Input State</button>
+        <button onclick="testFormData()">Test FormData</button>
+        <button onclick="testUpload()">Test Upload</button>
+    </div>
+    
+    <div class="debug">
+        <h3>Debug Output</h3>
+        <div id="debugOutput"></div>
+    </div>
+
+    <script>
+        let selectedFiles = [];
+        
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            log('=== FILE INPUT CHANGE EVENT ===');
+            log('Event:', e);
+            log('Target:', e.target);
+            log('Files object:', e.target.files);
+            log('Files length:', e.target.files ? e.target.files.length : 'null');
+            log('Multiple attribute:', e.target.hasAttribute('multiple'));
+            
+            if (e.target.files && e.target.files.length > 0) {
+                selectedFiles = Array.from(e.target.files);
+                log('Files converted to array:', selectedFiles);
+                
+                document.getElementById('fileCount').textContent = `${selectedFiles.length} files selected`;
+                
+                let details = '';
+                selectedFiles.forEach((file, i) => {
+                    details += `File ${i+1}: ${file.name} (${file.size} bytes)<br>`;
+                    log(`File ${i+1}:`, file.name, file.size, file.type);
+                });
+                document.getElementById('fileDetails').innerHTML = details;
+            } else {
+                selectedFiles = [];
+                document.getElementById('fileCount').textContent = '0 files selected';
+                document.getElementById('fileDetails').innerHTML = '';
+                log('No files selected');
+            }
+        });
+        
+        function testInput() {
+            log('=== INPUT STATE TEST ===');
+            const input = document.getElementById('fileInput');
+            log('Input element:', input);
+            log('Input.files:', input.files);
+            log('Input.files.length:', input.files ? input.files.length : 'null');
+            log('Selected files array:', selectedFiles);
+            log('Selected files length:', selectedFiles.length);
+        }
+        
+        function testFormData() {
+            log('=== FORMDATA TEST ===');
+            if (selectedFiles.length === 0) {
+                log('No files to test');
+                return;
+            }
+            
+            const formData = new FormData();
+            selectedFiles.forEach((file, i) => {
+                log(`Adding file ${i+1} to FormData:`, file.name);
+                formData.append('files', file);
+            });
+            
+            log('FormData created');
+            log('FormData entries:');
+            for (let pair of formData.entries()) {
+                log(`${pair[0]}:`, pair[1]);
+            }
+        }
+        
+        async function testUpload() {
+            log('=== UPLOAD TEST ===');
+            if (selectedFiles.length === 0) {
+                log('No files to upload');
+                return;
+            }
+            
+            const formData = new FormData();
+            selectedFiles.forEach(file => formData.append('files', file));
+            
+            try {
+                log('Sending request to /api/extract-multiple-texts');
+                const response = await fetch('/api/extract-multiple-texts', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log('Response status:', response.status);
+                log('Response headers:', response.headers);
+                
+                const result = await response.json();
+                log('Response result:', result);
+                
+            } catch (error) {
+                log('Upload error:', error);
+            }
+        }
+        
+        function log(...args) {
+            console.log(...args);
+            const output = document.getElementById('debugOutput');
+            const div = document.createElement('div');
+            div.textContent = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+    </script>
+</body>
+</html>

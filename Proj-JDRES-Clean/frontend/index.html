@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JD-Resume Matching Engine</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>JD → Resume Matching Engine</h1>
+            <p>Upload job descriptions and resumes to find the best matches</p>
+        </header>
+
+        <main>
+            <!-- File Upload Section -->
+            <section class="upload-section">
+                <div class="upload-group">
+                    <h3>Job Description</h3>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="jdFile" accept=".pdf,.txt,.docx" style="display: none;">
+                        <button id="uploadJDBtn" class="file-btn">Upload JD</button>
+                    </div>
+                    <div class="file-info" id="jdFileInfo"></div>
+                </div>
+
+                <div class="upload-group">
+                    <h3>Resume Files</h3>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="resumeFile" accept=".pdf,.txt,.docx" style="display: none;">
+                        <button id="uploadResumeBtn" class="file-btn">Upload Resume</button>
+                        <button id="addMoreResumeBtn" class="file-btn" style="display: none;">Add More Resume</button>
+                    </div>
+                    <div class="uploaded-files" id="uploadedFiles"></div>
+                </div>
+            </section>
+
+            <!-- Action Buttons -->
+            <section class="actions">
+                <button id="extractBtn" class="btn btn-primary" disabled>Extract Skills</button>
+                <button id="matchBtn" class="btn btn-secondary" disabled>Calculate Match</button>
+                <button id="rankBtn" class="btn btn-accent" disabled>Rank Resumes</button>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results">
+                <!-- Skill Extraction Results -->
+                <div class="result-card" id="skillResults" style="display: none;">
+                    <h3>Extracted Skills</h3>
+                    <div id="skillsContainer"></div>
+                </div>
+
+                <!-- Match Results -->
+                <div class="result-card" id="matchResults" style="display: none;">
+                    <h3>Match Scores</h3>
+                    <div id="matchContainer"></div>
+                </div>
+
+                <!-- Ranking Results -->
+                <div class="result-card" id="rankingResults" style="display: none;">
+                    <h3>Resume Rankings</h3>
+                    <div id="rankedResumesList" class="ranked-list"></div>
+                </div>
+            </section>
+
+            <!-- Loading Indicator -->
+            <div id="loading" class="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Processing...</p>
+            </div>
+
+            <!-- Status Messages -->
+            <div id="statusMessage" class="status-message"></div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
