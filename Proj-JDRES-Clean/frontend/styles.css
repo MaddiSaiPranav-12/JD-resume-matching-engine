@@ -95,6 +95,80 @@ header p {
     transform: translateY(0);
 }
 
+/* JD Text Input Styles */
+.jd-text-input-wrapper {
+    margin-bottom: 15px;
+}
+
+.input-label {
+    display: block;
+    color: #4a5568;
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.jd-textarea {
+    width: 100%;
+    padding: 15px;
+    border: 2px solid #e1e8ff;
+    border-radius: 10px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #2d3748;
+    background: white;
+    resize: vertical;
+    min-height: 120px;
+    transition: all 0.3s ease;
+}
+
+.jd-textarea:focus {
+    outline: none;
+    border-color: #4facfe;
+    box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.15);
+}
+
+.jd-textarea::placeholder {
+    color: #a0aec0;
+}
+
+.submit-text-btn {
+    margin-top: 12px;
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%) !important;
+    box-shadow: 0 4px 15px rgba(72, 187, 120, 0.3) !important;
+}
+
+.submit-text-btn:hover {
+    box-shadow: 0 6px 20px rgba(72, 187, 120, 0.4) !important;
+}
+
+/* OR Divider Styles */
+.divider-container {
+    display: flex;
+    align-items: center;
+    margin: 20px 0;
+    gap: 15px;
+}
+
+.divider-line {
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #e1e8ff, transparent);
+}
+
+.divider-text {
+    color: #718096;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 5px 15px;
+    background: #f8f9ff;
+    border-radius: 20px;
+    border: 2px solid #e1e8ff;
+}
+
 .uploaded-files {
     margin: 20px 0;
     padding: 15px;

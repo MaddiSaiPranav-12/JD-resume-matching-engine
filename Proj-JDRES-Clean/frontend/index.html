@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JD-Resume Matching Engine</title>
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -18,9 +20,26 @@
             <section class="upload-section">
                 <div class="upload-group">
                     <h3>Job Description</h3>
+
+                    <!-- Text Input for JD -->
+                    <div class="jd-text-input-wrapper">
+                        <label for="jdTextInput" class="input-label">Enter Job Description</label>
+                        <textarea id="jdTextInput" class="jd-textarea"
+                            placeholder="Paste or type your job description here..." rows="6"></textarea>
+                        <button id="submitJDTextBtn" class="file-btn submit-text-btn">Submit JD</button>
+                    </div>
+
+                    <!-- OR Divider -->
+                    <div class="divider-container">
+                        <div class="divider-line"></div>
+                        <span class="divider-text">OR</span>
+                        <div class="divider-line"></div>
+                    </div>
+
+                    <!-- File Upload for JD -->
                     <div class="file-input-wrapper">
                         <input type="file" id="jdFile" accept=".pdf,.txt,.docx" style="display: none;">
-                        <button id="uploadJDBtn" class="file-btn">Upload JD</button>
+                        <button id="uploadJDBtn" class="file-btn">Upload JD File</button>
                     </div>
                     <div class="file-info" id="jdFileInfo"></div>
                 </div>
@@ -77,4 +96,5 @@
 
     <script src="app.js"></script>
 </body>
+
 </html>
