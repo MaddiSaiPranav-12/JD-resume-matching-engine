@@ -35,6 +35,41 @@ build/
 out/
 
 # =====================================
+# Java / Spring Boot / Maven
+# =====================================
+# Maven build output
+target/
+
+# Maven wrapper (downloaded automatically)
+.mvn/wrapper/maven-wrapper.jar
+
+# Compiled class files
+*.class
+
+# Package files
+*.jar
+*.war
+*.ear
+
+# Spring Boot
+*.log
+spring-boot-devtools.log
+application.properties
+application*.properties
+application.yml
+application*.yml
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# IntelliJ IDEA
+*.iws
+*.ipr
+out/
+
+# =====================================
 # Python
 # =====================================
 # Byte-compiled / optimized / DLL files
