@@ -7,11 +7,16 @@ class MatchingApp {
     }
 
     initializeEventListeners() {
+        // JD Text Input
+        document.getElementById('submitJDTextBtn').addEventListener('click', () => {
+            this.handleJDTextSubmit();
+        });
+
         // JD Upload
         document.getElementById('uploadJDBtn').addEventListener('click', () => {
             document.getElementById('jdFile').click();
         });
-        
+
         document.getElementById('jdFile').addEventListener('change', (e) => {
             if (e.target.files[0]) this.handleJDFileUpload(e.target.files[0]);
         });
@@ -20,11 +25,11 @@ class MatchingApp {
         document.getElementById('uploadResumeBtn').addEventListener('click', () => {
             document.getElementById('resumeFile').click();
         });
-        
+
         document.getElementById('addMoreResumeBtn').addEventListener('click', () => {
             document.getElementById('resumeFile').click();
         });
-        
+
         document.getElementById('resumeFile').addEventListener('change', (e) => {
             if (e.target.files[0]) this.handleResumeFileUpload(e.target.files[0]);
         });
@@ -38,22 +43,23 @@ class MatchingApp {
     async handleJDFileUpload(file) {
         this.showLoading(true);
         this.showStatus('Uploading JD file...', 'info');
-        
+
         try {
             const formData = new FormData();
             formData.append('file', file);
-            
+
             const response = await fetch('/api/extract-text', {
                 method: 'POST',
                 body: formData
             });
-            
+
             const result = await response.json();
-            
+
             if (result.success) {
                 this.jdText = result.text;
                 this.jdSkills = []; // Reset skills when new JD uploaded
                 document.getElementById('jdFileInfo').innerHTML = `✓ ${file.name}`;
+                document.getElementById('jdTextInput').value = ''; // Clear textarea when file uploaded
                 this.showStatus('JD uploaded successfully', 'success');
                 this.updateButtonStates();
             } else {
@@ -66,6 +72,30 @@ class MatchingApp {
         }
     }
 
+    handleJDTextSubmit() {
+        const textArea = document.getElementById('jdTextInput');
+        const text = textArea.value.trim();
+
+        if (!text) {
+            this.showStatus('Please enter a job description', 'error');
+            return;
+        }
+
+        if (text.length < 50) {
+            this.showStatus('Job description seems too short. Please provide more details.', 'error');
+            return;
+        }
+
+        this.jdText = text;
+        this.jdSkills = []; // Reset skills when new JD submitted
+        document.getElementById('jdFileInfo').innerHTML = `✓ JD entered manually (${text.length} characters)`;
+        this.showStatus('Job description submitted successfully', 'success');
+        this.updateButtonStates();
+
+        // Clear file input if any file was previously selected
+        document.getElementById('jdFile').value = '';
+    }
+
     async handleResumeFileUpload(file) {
         // Check if file already exists
         if (this.resumeFiles.has(file.name)) {
@@ -75,18 +105,18 @@ class MatchingApp {
 
         this.showLoading(true);
         this.showStatus('Uploading resume...', 'info');
-        
+
         try {
             const formData = new FormData();
             formData.append('file', file);
-            
+
             const response = await fetch('/api/extract-text', {
                 method: 'POST',
                 body: formData
             });
-            
+
             const result = await response.json();
-            
+
             if (result.success) {
                 // Store file data
                 this.resumeFiles.set(file.name, {
@@ -94,11 +124,11 @@ class MatchingApp {
                     skills: [],
                     processed: false
                 });
-                
+
                 this.updateUploadedFilesList();
                 this.showStatus('Resume uploaded successfully', 'success');
                 this.updateButtonStates();
-                
+
                 // Show "Add More" button
                 document.getElementById('addMoreResumeBtn').style.display = 'inline-block';
             } else {
@@ -114,7 +144,7 @@ class MatchingApp {
     updateUploadedFilesList() {
         const container = document.getElementById('uploadedFiles');
         const fileNames = Array.from(this.resumeFiles.keys());
-        
+
         container.innerHTML = `
             <h4>Uploaded Resumes (${fileNames.length}):</h4>
             ${fileNames.map(name => `<div class="file-item">📄 ${name}</div>`).join('')}
@@ -123,10 +153,10 @@ class MatchingApp {
 
     async extractSkills() {
         if (!this.jdText) {
-            this.showStatus('Please upload JD first', 'error');
+            this.showStatus('Please enter or upload a Job Description first', 'error');
             return;
         }
-        
+
         if (this.resumeFiles.size === 0) {
             this.showStatus('Please upload at least one resume', 'error');
             return;
@@ -183,7 +213,7 @@ class MatchingApp {
 
         try {
             const matchResults = [];
-            
+
             for (let [filename, fileData] of this.resumeFiles) {
                 if (fileData.skills.length > 0) {
                     const response = await fetch('/api/match-skills', {
@@ -223,7 +253,7 @@ class MatchingApp {
 
         try {
             const rankingResults = [];
-            
+
             // Get match results for all resumes
             for (let [filename, fileData] of this.resumeFiles) {
                 if (fileData.skills.length > 0) {
@@ -236,7 +266,7 @@ class MatchingApp {
                         })
                     });
                     const result = await response.json();
-                    
+
                     rankingResults.push({
                         resume_id: filename,
                         similarity_score: result.matchScore / 100, // Convert percentage to decimal
@@ -250,7 +280,7 @@ class MatchingApp {
 
             // Sort by match score (highest first)
             rankingResults.sort((a, b) => b.similarity_score - a.similarity_score);
-            
+
             // Add ranks
             rankingResults.forEach((result, index) => {
                 result.rank = index + 1;
@@ -274,7 +304,7 @@ class MatchingApp {
 
     displaySkillResults() {
         const container = document.getElementById('skillsContainer');
-        
+
         let html = `
             <div class="skill-group">
                 <h4>Job Description Skills</h4>
@@ -303,7 +333,7 @@ class MatchingApp {
 
     displayMatchResults(matchResults) {
         const container = document.getElementById('matchContainer');
-        
+
         const html = matchResults.map(match => `
             <div class="match-item">
                 <h4>${match.filename}</h4>
@@ -327,7 +357,7 @@ class MatchingApp {
 
     displayRankingResults(rankingData) {
         const container = document.getElementById('rankedResumesList');
-        
+
         const html = rankingData.results.map(resume => `
             <div class="resume-item">
                 <div class="resume-info">
