@@ -43,7 +43,13 @@ Set your OpenAI API key as an environment variable before running:
 export OPENAI_API_KEY=your_api_key_here
 ```
 
-Or modify `src/main/resources/application.properties`:
+Copy `src/main/resources/application.properties.example` to `src/main/resources/application.properties` and add your API key:
+ 
+ ```bash
+ cp src/main/resources/application.properties.example src/main/resources/application.properties
+ ```
+ 
+ Then modify `src/main/resources/application.properties`:
 
 ```properties
 openai.api-key=your_api_key_here

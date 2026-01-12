@@ -9,6 +9,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,8 +22,9 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "*")
 public class ApiController {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiController.class);
 
     private final TextExtractorService textExtractorService;
     private final SkillExtractorService skillExtractorService;
@@ -62,8 +66,8 @@ public class ApiController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            System.err.println("Text extraction error: " + e.getMessage());
-            response.put("error", "Failed to extract text from file");
+            log.error("Text extraction error: {}", e.getMessage());
+            response.put("error", "Failed to extract text from file: " + e.getMessage());
             return ResponseEntity.status(500).body(response);
         }
     }
@@ -77,28 +81,39 @@ public class ApiController {
         Map<String, Object> response = new HashMap<>();
 
         try {
-            System.out.println("=== MULTIPLE TEXT EXTRACTION REQUEST ===");
-            System.out.println("Files received: " + files.size());
+            log.info("=== MULTIPLE TEXT EXTRACTION REQUEST ===");
+            log.info("Files received: {}", files.size());
 
             if (files.isEmpty()) {
                 response.put("error", "No files uploaded");
                 return ResponseEntity.badRequest().body(response);
             }
 
-            Map<String, String> results = textExtractorService.extractMultipleTexts(files);
+            Map<String, TextExtractorService.ExtractionResult> extractionResults = textExtractorService
+                    .extractMultipleTexts(files);
 
-            long successCount = results.values().stream().filter(text -> text != null).count();
+            Map<String, String> successful = new HashMap<>();
+            Map<String, String> failed = new HashMap<>();
+
+            extractionResults.forEach((filename, result) -> {
+                if (result.success()) {
+                    successful.put(filename, result.text());
+                } else {
+                    failed.put(filename, result.errorMessage());
+                }
+            });
 
             response.put("success", true);
-            response.put("results", results);
+            response.put("results", successful);
+            response.put("errors", failed);
             response.put("totalFiles", files.size());
-            response.put("successCount", successCount);
-            response.put("failedCount", files.size() - successCount);
+            response.put("successCount", (long) successful.size());
+            response.put("failedCount", (long) failed.size());
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            System.err.println("Multiple text extraction error: " + e.getMessage());
-            response.put("error", "Failed to extract texts from files");
+            log.error("Multiple text extraction error: {}", e.getMessage());
+            response.put("error", "Failed to extract texts from files: " + e.getMessage());
             return ResponseEntity.status(500).body(response);
         }
     }
@@ -129,8 +144,8 @@ public class ApiController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            System.err.println("Skill extraction error: " + e.getMessage());
-            response.put("error", "Failed to extract skills");
+            log.error("Skill extraction error: {}", e.getMessage());
+            response.put("error", "Failed to extract skills: " + e.getMessage());
             return ResponseEntity.status(500).body(response);
         }
     }
@@ -172,8 +187,8 @@ public class ApiController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            System.err.println("Match calculation error: " + e.getMessage());
-            response.put("error", "Failed to calculate match");
+            log.error("Match calculation error: {}", e.getMessage());
+            response.put("error", "Failed to calculate match: " + e.getMessage());
             return ResponseEntity.status(500).body(response);
         }
     }
@@ -210,8 +225,8 @@ public class ApiController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            System.err.println("Resume ranking error: " + e.getMessage());
-            response.put("error", "Failed to rank resumes");
+            log.error("Resume ranking error: {}", e.getMessage());
+            response.put("error", "Failed to rank resumes: " + e.getMessage());
             return ResponseEntity.status(500).body(response);
         }
     }

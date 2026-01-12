@@ -14,10 +14,13 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")
-                .allowedOrigins("*")
+        registry.addMapping("/api/**")
+                // Restrict to trusted origins (React/Vite default ports)
+                // In production, this should be configured via properties
+                .allowedOriginPatterns("http://localhost:3000", "http://localhost:5173", "http://localhost:8080")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*");
+                .allowedHeaders("*")
+                .allowCredentials(true);
     }
 
     @Override

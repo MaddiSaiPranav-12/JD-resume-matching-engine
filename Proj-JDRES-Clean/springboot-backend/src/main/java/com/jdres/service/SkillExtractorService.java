@@ -7,10 +7,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Skill Extractor Service
@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
  */
 @Service
 public class SkillExtractorService {
+
+    private static final Logger log = LoggerFactory.getLogger(SkillExtractorService.class);
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
@@ -85,7 +87,7 @@ public class SkillExtractorService {
                 });
             }
         } catch (Exception e) {
-            System.err.println("OpenAI API error: " + e.getMessage());
+            log.error("OpenAI API error: {}", e.getMessage());
         }
 
         // Fallback to keyword matching
@@ -136,7 +138,7 @@ public class SkillExtractorService {
                 });
             }
         } catch (Exception e) {
-            System.err.println("OpenAI API error: " + e.getMessage());
+            log.error("OpenAI API error: {}", e.getMessage());
         }
 
         // Fallback logic
@@ -159,9 +161,10 @@ public class SkillExtractorService {
             }
         }
 
-        // Return some default skills if none found (for demo purposes)
+        // If no skills are found via keyword matching, return an empty list
         if (foundSkills.isEmpty()) {
-            return COMMON_SKILLS.subList(0, 3 + new Random().nextInt(3));
+            log.warn("Fallback keyword skill extraction found no skills; returning empty list.");
+            return Collections.emptyList();
         }
 
         return foundSkills;

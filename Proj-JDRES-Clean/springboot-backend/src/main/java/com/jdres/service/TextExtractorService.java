@@ -8,6 +8,8 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -27,6 +29,8 @@ import java.util.UUID;
 @Service
 public class TextExtractorService {
 
+    private static final Logger log = LoggerFactory.getLogger(TextExtractorService.class);
+
     @Value("${uploads.dir}")
     private String uploadsDir;
 
@@ -40,6 +44,12 @@ public class TextExtractorService {
         String originalFilename = file.getOriginalFilename();
         if (originalFilename == null) {
             throw new IllegalArgumentException("File name is required");
+        }
+
+        // Explicit file size check (10MB)
+        long MAX_FILE_SIZE = 10 * 1024 * 1024;
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new IOException("File too large. Maximum size is 10MB");
         }
 
         String ext = getFileExtension(originalFilename).toLowerCase();
@@ -64,23 +74,32 @@ public class TextExtractorService {
      * Extract text from multiple files
      * 
      * @param files - List of uploaded files
-     * @return Map with filename as key and extracted text as value
+     * @return Map with filename as key and extraction result as value
      */
-    public Map<String, String> extractMultipleTexts(List<MultipartFile> files) {
-        Map<String, String> results = new HashMap<>();
+    public Map<String, ExtractionResult> extractMultipleTexts(List<MultipartFile> files) {
+        Map<String, ExtractionResult> results = new HashMap<>();
+        boolean anySuccess = false;
 
         for (MultipartFile file : files) {
             String filename = file.getOriginalFilename();
             try {
                 String text = extractText(file);
-                results.put(filename, text);
+                results.put(filename, new ExtractionResult(true, text, null));
+                anySuccess = true;
             } catch (Exception e) {
-                System.err.println("Failed to extract " + filename + ": " + e.getMessage());
-                results.put(filename, null);
+                log.error("Failed to extract {}: {}", filename, e.getMessage());
+                results.put(filename, new ExtractionResult(false, null, e.getMessage()));
             }
         }
 
+        if (!files.isEmpty() && !anySuccess) {
+            throw new RuntimeException("Failed to extract text from all " + files.size() + " files");
+        }
+
         return results;
+    }
+
+    public record ExtractionResult(boolean success, String text, String errorMessage) {
     }
 
     /**
@@ -90,8 +109,22 @@ public class TextExtractorService {
         Path uploadsPath = Paths.get(uploadsDir);
         Files.createDirectories(uploadsPath);
 
-        String uniqueFilename = UUID.randomUUID() + "_" + file.getOriginalFilename();
-        Path tempPath = uploadsPath.resolve(uniqueFilename);
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null) {
+            originalFilename = "temp_file";
+        }
+
+        // Sanitize: ensure only filename is used
+        String sanitizedFilename = Paths.get(originalFilename).getFileName().toString();
+        String uniqueFilename = UUID.randomUUID() + "_" + sanitizedFilename;
+
+        Path tempPath = uploadsPath.resolve(uniqueFilename).normalize();
+
+        // Extra check for security
+        if (!tempPath.startsWith(uploadsPath.normalize())) {
+            throw new IOException("Invalid upload path prevented: " + uniqueFilename);
+        }
+
         file.transferTo(tempPath);
 
         return tempPath;

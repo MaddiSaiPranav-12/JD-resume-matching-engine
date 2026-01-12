@@ -1,6 +1,8 @@
 package com.jdres.service;
 
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.regex.Pattern;
@@ -11,6 +13,8 @@ import java.util.regex.Pattern;
  */
 @Service
 public class MatchCalculatorService {
+
+    private static final Logger log = LoggerFactory.getLogger(MatchCalculatorService.class);
 
     // Common skill variations for normalization
     private static final Map<String, String> SKILL_VARIATIONS = Map.of(
@@ -30,7 +34,9 @@ public class MatchCalculatorService {
      * @return Match result with score and skill breakdown
      */
     public Map<String, Object> calculateSkillMatch(List<String> jdSkills, List<String> resumeSkills) {
-        System.out.println("Calculating match for: jdSkills=" + jdSkills + ", resumeSkills=" + resumeSkills);
+        log.info("Calculating match for {} JD skills and {} resume skills",
+                jdSkills != null ? jdSkills.size() : 0,
+                resumeSkills != null ? resumeSkills.size() : 0);
 
         if (jdSkills == null || jdSkills.isEmpty()) {
             Map<String, Object> result = new HashMap<>();
@@ -86,7 +92,7 @@ public class MatchCalculatorService {
         result.put("totalRequired", jdSkills.size());
         result.put("totalMatched", matchedSkills.size());
 
-        System.out.println("Match calculation result: " + result);
+        log.debug("Match calculation result: {}", result);
         return result;
     }
 
