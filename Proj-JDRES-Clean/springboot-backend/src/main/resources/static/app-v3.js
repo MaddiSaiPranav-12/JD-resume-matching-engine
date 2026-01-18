@@ -930,18 +930,13 @@ class App {
         // Ideally we would swap views or have tabs. The UI request shows "Results" card.
         // We will append Match/Ranking results below skills if they exist.
 
-        const existingMatchContainer = document.getElementById('matchResultsContainer');
+        // Remove existing containers
+        const existingMatchContainer = document.getElementById('tablesSliderContainer');
         if (existingMatchContainer) existingMatchContainer.remove();
 
         if (job.status === 'ranked' || job.status === 'matched') {
-            const matchDiv = document.createElement('div');
-            matchDiv.id = 'matchResultsContainer';
-            matchDiv.className = 'mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40';
-
-            // Filter: Main table shows only 'review' or unselected (not accepted, not rejected)
+            // Filter resumes
             let displayResumes = this.allResumes.filter(r => r.status !== 'rejected' && r.status !== 'accepted');
-
-            // Separate list of accepted resumes for the Accepted table
             let acceptedResumes = this.allResumes.filter(r => r.status === 'accepted');
 
             // Sort resumes by score if ranked
@@ -949,177 +944,148 @@ class App {
                 displayResumes.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
             }
 
-            matchDiv.innerHTML = `
-                <table class="w-full text-sm text-left">
-                    <thead class="text-xs text-zinc-500 uppercase bg-zinc-50/50 dark:bg-zinc-800/30 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
-                        <tr>
-                            <th class="px-2 py-3 font-medium">#</th>
-                            <th class="px-2 py-3 font-medium">Candidate</th>
-                            <th class="px-2 py-3 font-medium text-center">Match</th>
-                            <th class="px-2 py-3 font-medium text-center">ATS</th>
-                            <th class="px-2 py-3 font-medium text-center">Skills</th>
-                            <th class="px-2 py-3 font-medium">Missing</th>
-                            <th class="px-2 py-3 font-medium">Projects</th>
-                            <th class="px-2 py-3 font-medium text-center">Exp</th>
-                            <th class="px-2 py-3 font-medium text-center">Gaps</th>
-                            <th class="px-2 py-3 font-medium">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
-                        ${displayResumes.map((r, idx) => {
-                // Get skill counts
+            // Create container with tabs
+            const sliderContainer = document.createElement('div');
+            sliderContainer.id = 'tablesSliderContainer';
+            sliderContainer.className = 'mt-6';
+
+            // Tab buttons
+            const tabsHtml = `
+                <div class="flex gap-2 mb-4 border-b border-zinc-200 dark:border-zinc-700">
+                    <button id="tabRanking" onclick="app.switchTableTab('ranking')" 
+                        class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all border-sky-500 text-sky-600 dark:text-sky-400">
+                        📊 Ranking (${displayResumes.length})
+                    </button>
+                    <button id="tabAccepted" onclick="app.switchTableTab('accepted')" 
+                        class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300">
+                        ✅ Accepted (${acceptedResumes.length})
+                    </button>
+                </div>
+            `;
+
+            // Ranking table content
+            const rankingTableHtml = `
+                <div id="panelRanking" class="table-panel">
+                    <div class="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-zinc-500 uppercase bg-zinc-50/50 dark:bg-zinc-800/30 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
+                                <tr>
+                                    <th class="px-2 py-3 font-medium">#</th>
+                                    <th class="px-2 py-3 font-medium">Candidate</th>
+                                    <th class="px-2 py-3 font-medium text-center">Match</th>
+                                    <th class="px-2 py-3 font-medium text-center">ATS</th>
+                                    <th class="px-2 py-3 font-medium text-center">Skills</th>
+                                    <th class="px-2 py-3 font-medium">Missing</th>
+                                    <th class="px-2 py-3 font-medium">Projects</th>
+                                    <th class="px-2 py-3 font-medium text-center">Exp</th>
+                                    <th class="px-2 py-3 font-medium">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+                                ${displayResumes.length === 0 ? `
+                                    <tr><td colspan="9" class="px-4 py-8 text-center text-zinc-400">No candidates pending review</td></tr>
+                                ` : displayResumes.map((r, idx) => {
                 const matchedList = r.matchedSkillsList || (Array.isArray(r.matchedSkills) ? r.matchedSkills : []);
                 const missingList = r.missingSkillsList || (Array.isArray(r.missingSkills) ? r.missingSkills : []);
                 const totalRequired = matchedList.length + missingList.length;
                 const matchedCount = matchedList.length;
-
-                // Format matched as X/Y
                 const matchedDisplay = `${matchedCount}/${totalRequired}`;
                 const matchedTitle = matchedList.join(', ') || 'None';
-
-                // Format missing skills - show first 2, tooltip shows all
-                // Format missing skills - vertical list
                 const missingDisplay = missingList.length > 0
                     ? `<div class="flex flex-col gap-0.5 text-[11px] leading-tight text-left">
-                        ${missingList.map(s => `<div>• ${s}</div>`).join('')}
-                       </div>`
+                            ${missingList.map(s => `<div>• ${s}</div>`).join('')}
+                           </div>`
                     : '<span class="opacity-50">—</span>';
-                const missingTitle = missingList.join(', ') || 'None missing';
-
-                // Use candidate name if available
                 const displayName = r.candidateName || r.name || 'Unknown';
-
-                // ATS Score (skill match score specifically)
                 const atsScore = r.skillMatchScore || r.matchScore || 0;
-
-                // Relevant Projects
                 const projects = r.relevantProjects || [];
                 const hasProjects = projects.length > 0;
-                const projectNames = projects.map(p => p.name).join(', ');
-                const projectTooltip = projects.map(p => `${p.name} (${p.matchingTechs?.join(', ') || ''})`).join('\n') || 'No relevant projects';
-                // Format projects - vertical list
                 const projectDisplay = hasProjects
-                    ? `<div class="flex flex-col gap-0.5 text-[11px] leading-tight text-left">
-                        ${projects.map(p => `<div title="${p.name}">• ${p.name}</div>`).join('')}
-                       </div>`
+                    ? `<div class="flex flex-col gap-1 text-[11px] leading-tight text-left">
+                            ${projects.map(p => {
+                        const allTech = p.allTech || [];
+                        const matchingTechs = p.matchingTechs || [];
+                        const techDisplay = allTech.length > 0
+                            ? allTech.map(t => matchingTechs.includes(t)
+                                ? `<span class="text-emerald-600 font-semibold">${t}</span>`
+                                : `<span class="text-zinc-500">${t}</span>`
+                            ).join(', ')
+                            : '';
+                        return `<div class="mb-1">
+                                    <div class="font-medium text-zinc-800 dark:text-zinc-200">${p.name}</div>
+                                    ${techDisplay ? `<div class="text-[10px] text-zinc-500 dark:text-zinc-400">${techDisplay}</div>` : ''}
+                                </div>`;
+                    }).join('')}
+                           </div>`
                     : '<span class="opacity-50">—</span>';
 
                 return `
-                            <tr class="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors">
-                                <td class="px-2 py-3 align-top font-bold text-zinc-900 dark:text-zinc-200">
-                                    ${idx + 1}
-                                </td>
-                                <td class="px-2 py-3 align-top">
-                                    <div class="flex items-center gap-2">
-                                        <div>
+                                <tr class="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors">
+                                    <td class="px-2 py-3 align-top font-bold text-zinc-900 dark:text-zinc-200">${idx + 1}</td>
+                                    <td class="px-2 py-3 align-top">
+                                        <div class="flex items-center gap-2">
                                             <div class="font-medium text-zinc-900 dark:text-zinc-100 truncate max-w-[250px]" title="${displayName}">${displayName}</div>
-
+                                            ${r.viewLink ? `<a href="${r.viewLink}" target="_blank" class="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 flex-shrink-0" title="View Resume">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                            </a>` : ''}
                                         </div>
-                                        ${r.viewLink
-                        ? `<a href="${r.viewLink}" target="_blank" class="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 flex-shrink-0" title="View Resume">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                                                </svg>
-                                              </a>`
-                        : ''}
-                                    </div>
-                                </td>
-                                <td class="px-2 py-3 text-center">
-                                    <div class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${this.getScoreBadgeColor(r.matchScore)}">
-                                        ${r.matchScore || 0}%
-                                    </div>
-                                </td>
-                                <td class="px-2 py-3 text-center">
-                                    <span class="text-xs font-medium text-sky-600 dark:text-sky-400">${atsScore}%</span>
-                                </td>
-                                <td class="px-2 py-3 text-center">
-                                    <span class="text-emerald-600 dark:text-emerald-400 font-semibold cursor-help" title="${matchedTitle}">${matchedDisplay}</span>
-                                </td>
-                                <td class="px-2 py-3 align-top">
-                                    <div class="text-xs text-red-500 dark:text-red-400 min-w-[140px]">
-                                        ${missingDisplay}
-                                    </div>
-                                </td>
-                                <td class="px-2 py-3 align-top">
-                                    <div class="text-xs text-emerald-600 dark:text-emerald-400 min-w-[140px]">
-                                        ${projectDisplay}
-                                    </div>
-                                </td>
-                                <td class="px-2 py-3 text-center text-zinc-600 dark:text-zinc-400 text-xs">
-                                    ${r.candidateExperience || '0y'}
-                                </td>
-                                <td class="px-2 py-3 text-center">
-                                    ${r.hasGap
-                        ? `<span class="text-amber-500 text-xs font-medium" title="${r.gapMonths} months gap">Yes</span>`
-                        : '<span class="text-zinc-400 text-xs">—</span>'}
-                                </td>
-                                <td class="px-2 py-3">
-                                    <div class="flex items-center gap-1">
-                                        <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'accepted')" 
-                                            class="candidate-action-btn px-2 py-1 rounded-md text-[10px] font-semibold transition-all
-                                            ${r.status === 'accepted'
-                        ? 'bg-emerald-500 text-white shadow-sm'
-                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/40'}">
-                                            ✓ Accept
-                                        </button>
-                                        <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'review')"
-                                            class="candidate-action-btn px-2 py-1 rounded-md text-[10px] font-semibold transition-all
-                                            ${r.status === 'review'
-                        ? 'bg-amber-500 text-white shadow-sm'
-                        : 'bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40'}">
-                                            ⏳ Review
-                                        </button>
-                                        <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'rejected')"
-                                            class="candidate-action-btn px-2 py-1 rounded-md text-[10px] font-semibold transition-all
-                                            ${r.status === 'rejected'
-                        ? 'bg-red-500 text-white shadow-sm'
-                        : 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40'}">
-                                            ✗ Reject
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `}).join('')}
-                    </tbody>
-                </table>
+                                    </td>
+                                    <td class="px-2 py-3 text-center">
+                                        <div class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${this.getScoreBadgeColor(r.matchScore)}">${r.matchScore || 0}%</div>
+                                    </td>
+                                    <td class="px-2 py-3 text-center">
+                                        <span class="text-xs font-medium text-sky-600 dark:text-sky-400">${atsScore}%</span>
+                                    </td>
+                                    <td class="px-2 py-3 text-center">
+                                        <span class="text-emerald-600 dark:text-emerald-400 font-semibold cursor-help" title="${matchedTitle}">${matchedDisplay}</span>
+                                    </td>
+                                    <td class="px-2 py-3 align-top">
+                                        <div class="text-xs text-red-500 dark:text-red-400 min-w-[140px]">${missingDisplay}</div>
+                                    </td>
+                                    <td class="px-2 py-3 align-top">
+                                        <div class="text-xs text-emerald-600 dark:text-emerald-400 min-w-[140px]">${projectDisplay}</div>
+                                    </td>
+                                    <td class="px-2 py-3 text-center text-zinc-600 dark:text-zinc-400 text-xs">${r.candidateExperience || '0y'}</td>
+                                    <td class="px-2 py-3">
+                                        <div class="flex gap-1">
+                                            <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'accepted')"
+                                                class="px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${r.status === 'accepted' ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400'}">✓ Accept</button>
+                                            <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'review')"
+                                                class="px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${r.status === 'review' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400'}">⏳ Review</button>
+                                            <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'rejected')"
+                                                class="px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${r.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400'}">✗ Reject</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `}).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             `;
 
-
-            this.dom.resultsContent.appendChild(matchDiv);
-
-            // === ACCEPTED CANDIDATES TABLE ===
-            const existingAcceptedContainer = document.getElementById('acceptedCandidatesContainer');
-            if (existingAcceptedContainer) existingAcceptedContainer.remove();
-
-            if (acceptedResumes.length > 0) {
-                const acceptedDiv = document.createElement('div');
-                acceptedDiv.id = 'acceptedCandidatesContainer';
-                acceptedDiv.className = 'mt-6 overflow-x-auto rounded-xl border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50/30 dark:bg-emerald-900/10';
-
-                acceptedDiv.innerHTML = `
-                    <div class="px-4 py-3 bg-emerald-100/50 dark:bg-emerald-900/30 border-b border-emerald-200 dark:border-emerald-800">
-                        <h3 class="text-sm font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
-                            Accepted Candidates (${acceptedResumes.length})
-                        </h3>
-                    </div>
-                    <table class="w-full text-sm text-left">
-                        <thead class="text-xs text-emerald-600 uppercase bg-emerald-50/50 dark:bg-emerald-900/20 dark:text-emerald-400 border-b border-emerald-200 dark:border-emerald-800">
-                            <tr>
-                                <th class="px-2 py-3 font-medium">#</th>
-                                <th class="px-2 py-3 font-medium">Candidate</th>
-                                <th class="px-2 py-3 font-medium text-center">Match</th>
-                                <th class="px-2 py-3 font-medium text-center">Skills</th>
-                                <th class="px-2 py-3 font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-emerald-100 dark:divide-emerald-800/50">
-                            ${acceptedResumes.map((r, idx) => {
-                    const displayName = r.candidateName || r.name || 'Unknown';
-                    const matchedList = r.matchedSkillsList || [];
-                    const totalRequired = matchedList.length + (r.missingSkillsList?.length || 0);
-                    return `
+            // Accepted candidates table content
+            const acceptedTableHtml = `
+                <div id="panelAccepted" class="table-panel hidden">
+                    <div class="overflow-x-auto rounded-xl border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50/30 dark:bg-emerald-900/10">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-emerald-600 uppercase bg-emerald-50/50 dark:bg-emerald-900/20 dark:text-emerald-400 border-b border-emerald-200 dark:border-emerald-800">
+                                <tr>
+                                    <th class="px-2 py-3 font-medium">#</th>
+                                    <th class="px-2 py-3 font-medium">Candidate</th>
+                                    <th class="px-2 py-3 font-medium text-center">Match</th>
+                                    <th class="px-2 py-3 font-medium text-center">Skills</th>
+                                    <th class="px-2 py-3 font-medium">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-emerald-100 dark:divide-emerald-800/50">
+                                ${acceptedResumes.length === 0 ? `
+                                    <tr><td colspan="5" class="px-4 py-8 text-center text-emerald-400">No accepted candidates yet. Accept candidates from the Ranking tab.</td></tr>
+                                ` : acceptedResumes.map((r, idx) => {
+                const displayName = r.candidateName || r.name || 'Unknown';
+                const matchedList = r.matchedSkillsList || [];
+                const totalRequired = matchedList.length + (r.missingSkillsList?.length || 0);
+                return `
                                 <tr class="hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 transition-colors">
                                     <td class="px-2 py-3 font-bold text-emerald-700 dark:text-emerald-300">${idx + 1}</td>
                                     <td class="px-2 py-3">
@@ -1144,12 +1110,39 @@ class App {
                                     </td>
                                 </tr>
                             `}).join('')}
-                        </tbody>
-                    </table>
-                `;
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
 
-                this.dom.resultsContent.appendChild(acceptedDiv);
-            }
+            sliderContainer.innerHTML = tabsHtml + rankingTableHtml + acceptedTableHtml;
+            this.dom.resultsContent.appendChild(sliderContainer);
+        }
+    }
+
+    // Switch between table tabs
+    switchTableTab(tab) {
+        const tabRanking = document.getElementById('tabRanking');
+        const tabAccepted = document.getElementById('tabAccepted');
+        const panelRanking = document.getElementById('panelRanking');
+        const panelAccepted = document.getElementById('panelAccepted');
+
+        if (!tabRanking || !tabAccepted || !panelRanking || !panelAccepted) return;
+
+        const activeTabClass = 'border-sky-500 text-sky-600 dark:text-sky-400';
+        const inactiveTabClass = 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300';
+
+        if (tab === 'ranking') {
+            tabRanking.className = `tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all ${activeTabClass}`;
+            tabAccepted.className = `tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all ${inactiveTabClass}`;
+            panelRanking.classList.remove('hidden');
+            panelAccepted.classList.add('hidden');
+        } else {
+            tabRanking.className = `tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all ${inactiveTabClass}`;
+            tabAccepted.className = `tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all ${activeTabClass}`;
+            panelRanking.classList.add('hidden');
+            panelAccepted.classList.remove('hidden');
         }
     }
 

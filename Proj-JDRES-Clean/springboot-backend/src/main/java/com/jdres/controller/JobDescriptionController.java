@@ -62,8 +62,8 @@ public class JobDescriptionController {
             Map<String, Object> parsedDetails = skillExtractorService.extractJobDescriptionDetails(jdText);
 
             // 3. Extract required/preferred skills for quick access
-            List<String> requiredSkills = extractSkillsList(parsedDetails, "mandatory");
-            List<String> preferredSkills = extractSkillsList(parsedDetails, "preferred");
+            List<String> requiredSkills = extractSkillsList(parsedDetails, "technical_skills");
+            List<String> preferredSkills = extractSkillsList(parsedDetails, "preferred_skills");
             int minExperience = extractMinExperience(parsedDetails);
 
             // 4. Save JD
@@ -366,7 +366,7 @@ public class JobDescriptionController {
                     }
                 }
 
-                // Project Relevance Analysis
+                // Project Relevance Analysis - Show ALL projects with matching tech highlighted
                 List<Map<String, Object>> relevantProjects = new ArrayList<>();
                 Set<String> requiredSkillsLower = requiredSkills.stream().map(String::toLowerCase)
                         .collect(Collectors.toSet());
@@ -383,10 +383,12 @@ public class JobDescriptionController {
                                     : "";
                             Object techObj = project.get("technologies_used");
 
+                            List<String> allTech = new ArrayList<>();
                             List<String> matchingTechs = new ArrayList<>();
                             if (techObj instanceof List) {
                                 @SuppressWarnings("unchecked")
                                 List<String> techList = (List<String>) techObj;
+                                allTech.addAll(techList);
                                 for (String tech : techList) {
                                     if (requiredSkillsLower.contains(tech.toLowerCase())) {
                                         matchingTechs.add(tech);
@@ -394,10 +396,11 @@ public class JobDescriptionController {
                                 }
                             }
 
-                            // Only include project if it has matching technologies
+                            // Only include project if it has AT LEAST 1 matching technology
                             if (!matchingTechs.isEmpty() && !projectName.isEmpty()) {
                                 Map<String, Object> projInfo = new HashMap<>();
                                 projInfo.put("name", projectName);
+                                projInfo.put("allTech", allTech);
                                 projInfo.put("matchingTechs", matchingTechs);
                                 relevantProjects.add(projInfo);
                             }
@@ -463,15 +466,25 @@ public class JobDescriptionController {
 
     @SuppressWarnings("unchecked")
     private List<String> extractSkillsList(Map<String, Object> details, String category) {
-        if (details == null || !details.containsKey("skills"))
+        if (details == null)
             return new ArrayList<>();
 
-        Object skillsObj = details.get("skills");
-        if (skillsObj instanceof Map) {
-            Map<String, Object> skillsMap = (Map<String, Object>) skillsObj;
-            Object categoryObj = skillsMap.get(category);
-            if (categoryObj instanceof List) {
-                return (List<String>) categoryObj;
+        // New format: skills are directly at top level (e.g., "technical_skills",
+        // "preferred_skills")
+        Object skillsObj = details.get(category);
+        if (skillsObj instanceof List) {
+            return (List<String>) skillsObj;
+        }
+
+        // Old format: skills nested under "skills" map
+        if (details.containsKey("skills")) {
+            Object skillsMapObj = details.get("skills");
+            if (skillsMapObj instanceof Map) {
+                Map<String, Object> skillsMap = (Map<String, Object>) skillsMapObj;
+                Object categoryObj = skillsMap.get(category);
+                if (categoryObj instanceof List) {
+                    return (List<String>) categoryObj;
+                }
             }
         }
         return new ArrayList<>();

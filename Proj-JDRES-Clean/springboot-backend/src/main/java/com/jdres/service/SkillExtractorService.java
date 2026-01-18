@@ -26,7 +26,8 @@ public class SkillExtractorService {
 
     private static final Logger log = LoggerFactory.getLogger(SkillExtractorService.class);
 
-    private final WebClient webClient;
+    private final WebClient openaiWebClient;
+    private final WebClient geminiWebClient;
     private final ObjectMapper objectMapper;
 
     @Value("${openai.api-key}")
@@ -34,6 +35,9 @@ public class SkillExtractorService {
 
     @Value("${openai.model}")
     private String openaiModel;
+
+    @Value("${gemini.api-key:}")
+    private String geminiApiKey;
 
     private static final List<String> COMMON_SKILLS = Arrays.asList(
             "JavaScript", "Python", "Java", "React", "Node.js", "SQL", "MongoDB",
@@ -44,12 +48,18 @@ public class SkillExtractorService {
             "Agile", "Scrum", "DevOps", "Cloud", "Azure", "GCP", "Terraform");
 
     public SkillExtractorService() {
-        // Simple WebClient configuration (avoid custom Netty client to prevent DNS
-        // issues on macOS)
-        this.webClient = WebClient.builder()
+        // OpenAI WebClient
+        this.openaiWebClient = WebClient.builder()
                 .baseUrl("https://api.openai.com/v1")
-                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(2 * 1024 * 1024)) // 2MB buffer
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(2 * 1024 * 1024))
                 .build();
+
+        // Gemini WebClient
+        this.geminiWebClient = WebClient.builder()
+                .baseUrl("https://generativelanguage.googleapis.com/v1beta")
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(2 * 1024 * 1024))
+                .build();
+
         this.objectMapper = new ObjectMapper();
     }
 
@@ -75,94 +85,41 @@ public class SkillExtractorService {
     }
 
     /**
-     * Extract structured details from resume text using OpenAI API
+     * Extract structured details from resume text using OpenAI API (with Gemini
+     * fallback)
      */
     public Map<String, Object> extractResumeDetails(String text) {
-        try {
-            String schema = "{\n" +
-                    "  \"candidate_profile\": {\n" +
-                    "    \"name\": \"\",\n" +
-                    "    \"email\": \"\",\n" +
-                    "    \"phone\": \"\",\n" +
-                    "    \"location\": \"\"\n" +
-                    "  },\n" +
-                    "\n" +
-                    "  \"summary\": \"\",\n" +
-                    "\n" +
-                    "  \"skills\": {\n" +
-                    "    \"primary\": [],\n" +
-                    "    \"secondary\": [],\n" +
-                    "    \"tools\": [],\n" +
-                    "    \"databases\": [],\n" +
-                    "    \"cloud\": []\n" +
-                    "  },\n" +
-                    "\n" +
-                    "  \"total_experience_years\": 0,\n" +
-                    "\n" +
-                    "  \"work_experience\": [\n" +
-                    "    {\n" +
-                    "      \"job_title\": \"\",\n" +
-                    "      \"company\": \"\",\n" +
-                    "      \"start_date\": \"YYYY-MM\",\n" +
-                    "      \"end_date\": \"YYYY-MM or PRESENT\",\n" +
-                    "      \"duration_months\": 0,\n" +
-                    "      \"responsibilities\": [],\n" +
-                    "      \"technologies_used\": []\n" +
-                    "    }\n" +
-                    "  ],\n" +
-                    "\n" +
-                    "  \"education\": [\n" +
-                    "    {\n" +
-                    "      \"degree\": \"\",\n" +
-                    "      \"field_of_study\": \"\",\n" +
-                    "      \"institution\": \"\",\n" +
-                    "      \"graduation_year\": 0,\n" +
-                    "      \"end_date\": \"YYYY-MM\"\n" +
-                    "    }\n" +
-                    "  ],\n" +
-                    "\n" +
-                    "  \"projects\": [\n" +
-                    "    {\n" +
-                    "      \"project_name\": \"\",\n" +
-                    "      \"description\": \"\",\n" +
-                    "      \"technologies_used\": [],\n" +
-                    "      \"role\": \"\"\n" +
-                    "    }\n" +
-                    "  ],\n" +
-                    "\n" +
-                    "  \"certifications\": [],\n" +
-                    "\n" +
-                    "  \"domain_experience\": [],\n" +
-                    "\n" +
-                    "  \"keywords\": [],\n" +
-                    "\n" +
-                    "  \"employment_gaps\": {\n" +
-                    "    \"has_gap\": false,\n" +
-                    "    \"total_gap_months\": 0,\n" +
-                    "    \"gap_details\": []\n" +
-                    "  }\n" +
-                    "}";
+        String schema = getResumeSchema();
+        String prompt = buildResumePrompt(schema, text);
 
-            String prompt = String.format(
-                    "You are an expert ATS resume parser.\n\n" +
-                            "Your task:\n" +
-                            "- Extract structured data useful for job–resume matching\n" +
-                            "- Extract the candidate's Full Name (usually at the top), Email, and Location\n" +
-                            "- Extract skills, experience, projects, education, and dates accurately\n" +
-                            "- Normalize skill names (e.g., React.js → React)\n" +
-                            "- Extract dates strictly in YYYY-MM format\n\n" +
-                            "STRICT RULES:\n" +
-                            "- DO NOT infer or assume employment gaps\n" +
-                            "- DO NOT infer skills not explicitly mentioned\n" +
-                            "- DO NOT add explanations or comments\n" +
-                            "- If data is missing, use empty string, empty array, or 0\n\n" +
-                            "Output requirements:\n" +
-                            "- Output ONLY valid JSON\n" +
-                            "- Follow the provided schema exactly\n" +
-                            "- No additional keys.\n\n" +
-                            "Schema:\n%s\n\n" +
-                            "Resume Text:\n%s",
-                    schema, text);
+        // Try OpenAI first
+        Map<String, Object> result = tryOpenAI(prompt);
+
+        // If OpenAI failed, try Gemini as fallback
+        if (result == null || result.isEmpty()) {
+            if (geminiApiKey != null && !geminiApiKey.isEmpty() && !geminiApiKey.equals("your_gemini_api_key_here")) {
+                log.info("🔄 OpenAI failed, trying Gemini fallback...");
+                result = tryGemini(prompt);
+            }
+        }
+
+        // Log extracted details
+        if (result != null && !result.isEmpty()) {
+            logExtractedDetails(result, "RESUME");
+            calculateEmploymentGaps(result);
+            return result;
+        }
+
+        log.warn("⚠️ Both OpenAI and Gemini failed to extract resume details");
+        return new HashMap<>();
+    }
+
+    /**
+     * Try extracting with OpenAI API
+     */
+    private Map<String, Object> tryOpenAI(String prompt) {
+        try {
+            log.info("📤 Calling OpenAI API ({})...", openaiModel);
 
             Map<String, Object> message = new HashMap<>();
             message.put("role", "user");
@@ -171,10 +128,10 @@ public class SkillExtractorService {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", openaiModel);
             requestBody.put("messages", List.of(message));
-            requestBody.put("max_tokens", 2500); // Increased for larger schema
-            requestBody.put("temperature", 0.0); // Strict info extraction
+            requestBody.put("max_tokens", 1500); // Enough for full resume extraction
+            requestBody.put("temperature", 0.0);
 
-            String response = webClient.post()
+            String response = openaiWebClient.post()
                     .uri("/chat/completions")
                     .header("Authorization", "Bearer " + openaiApiKey)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -185,26 +142,178 @@ public class SkillExtractorService {
 
             if (response != null) {
                 JsonNode root = objectMapper.readTree(response);
-                String content = root.path("choices").get(0).path("message").path("content").asText().trim();
 
-                // Remove markdown code blocks if present
+                // Log token usage
+                JsonNode usage = root.path("usage");
+                if (!usage.isMissingNode()) {
+                    int promptTokens = usage.path("prompt_tokens").asInt();
+                    int completionTokens = usage.path("completion_tokens").asInt();
+                    int totalTokens = usage.path("total_tokens").asInt();
+                    log.info("📊 Token Usage: {} prompt + {} completion = {} total tokens",
+                            promptTokens, completionTokens, totalTokens);
+                }
+
+                String content = root.path("choices").get(0).path("message").path("content").asText().trim();
                 content = content.replaceAll("```json\\s*|```\\s*", "");
 
                 Map<String, Object> parsedDetails = objectMapper.readValue(content,
                         new TypeReference<Map<String, Object>>() {
                         });
 
-                // Post-process for Gaps
-                calculateEmploymentGaps(parsedDetails);
-
+                log.info("✅ OpenAI extraction successful");
                 return parsedDetails;
             }
         } catch (Exception e) {
-            log.error("OpenAI API error extracting details: {}", e.getMessage());
+            log.error("❌ OpenAI API error: {}", e.getMessage());
         }
+        return null;
+    }
 
-        // Fallback: Empty map or basic keyword extraction
-        return new HashMap<>();
+    /**
+     * Try extracting with Gemini API (fallback)
+     */
+    private Map<String, Object> tryGemini(String prompt) {
+        try {
+            log.info("📤 Calling Gemini API...");
+
+            // Gemini API request format
+            Map<String, Object> part = new HashMap<>();
+            part.put("text", prompt);
+
+            Map<String, Object> content = new HashMap<>();
+            content.put("parts", List.of(part));
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("contents", List.of(content));
+
+            // Generation config for JSON output
+            Map<String, Object> genConfig = new HashMap<>();
+            genConfig.put("temperature", 0.0);
+            genConfig.put("maxOutputTokens", 4096);
+            requestBody.put("generationConfig", genConfig);
+
+            String response = geminiWebClient.post()
+                    .uri("/models/gemini-2.5-flash-lite:generateContent?key=" + geminiApiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (response != null) {
+                JsonNode root = objectMapper.readTree(response);
+                String textContent = root.path("candidates").get(0)
+                        .path("content").path("parts").get(0).path("text").asText().trim();
+                textContent = textContent.replaceAll("```json\\s*|```\\s*", "");
+
+                Map<String, Object> parsedDetails = objectMapper.readValue(textContent,
+                        new TypeReference<Map<String, Object>>() {
+                        });
+
+                log.info("✅ Gemini extraction successful");
+                return parsedDetails;
+            }
+        } catch (Exception e) {
+            log.error("❌ Gemini API error: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Log extracted details for debugging
+     */
+    @SuppressWarnings("unchecked")
+    private void logExtractedDetails(Map<String, Object> details, String type) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            sb.append("\n╔══════════════════════════════════════════════════════════════╗\n");
+            sb.append("║           EXTRACTED ").append(type).append(" DETAILS                        ║\n");
+            sb.append("╠══════════════════════════════════════════════════════════════╣\n");
+
+            // Candidate Profile
+            if (details.containsKey("candidate_profile")) {
+                Map<String, Object> profile = (Map<String, Object>) details.get("candidate_profile");
+                sb.append("║ 👤 Name: ").append(profile.getOrDefault("name", "N/A")).append("\n");
+                sb.append("║ 📧 Email: ").append(profile.getOrDefault("email", "N/A")).append("\n");
+                sb.append("║ 📍 Location: ").append(profile.getOrDefault("location", "N/A")).append("\n");
+            }
+
+            // Experience
+            sb.append("║ 💼 Total Experience: ").append(details.getOrDefault("total_experience_years", 0))
+                    .append(" years\n");
+
+            // Skills - handle both array and map formats
+            if (details.containsKey("skills")) {
+                Object skillsObj = details.get("skills");
+                List<String> allSkills = new ArrayList<>();
+                if (skillsObj instanceof List) {
+                    allSkills.addAll((List<String>) skillsObj);
+                } else if (skillsObj instanceof Map) {
+                    for (Object value : ((Map<String, Object>) skillsObj).values()) {
+                        if (value instanceof List)
+                            allSkills.addAll((List<String>) value);
+                    }
+                }
+                sb.append("║ 🛠️ Skills (").append(allSkills.size()).append("): ")
+                        .append(String.join(", ", allSkills.subList(0, Math.min(10, allSkills.size()))))
+                        .append(allSkills.size() > 10 ? "..." : "").append("\n");
+            }
+
+            // Projects
+            if (details.containsKey("projects")) {
+                List<Map<String, Object>> projects = (List<Map<String, Object>>) details.get("projects");
+                sb.append("║ 📁 Projects (").append(projects.size()).append("): ");
+                if (!projects.isEmpty()) {
+                    List<String> projectNames = new ArrayList<>();
+                    for (Map<String, Object> p : projects) {
+                        projectNames.add(String.valueOf(p.getOrDefault("project_name", "Unnamed")));
+                    }
+                    sb.append(String.join(", ", projectNames));
+                }
+                sb.append("\n");
+            }
+
+            // Work Experience
+            if (details.containsKey("work_experience")) {
+                List<Map<String, Object>> workExp = (List<Map<String, Object>>) details.get("work_experience");
+                sb.append("║ 🏢 Work Experience (").append(workExp.size()).append(" positions)\n");
+            }
+
+            // Education
+            if (details.containsKey("education")) {
+                List<Map<String, Object>> edu = (List<Map<String, Object>>) details.get("education");
+                sb.append("║ 🎓 Education (").append(edu.size()).append(" entries)\n");
+            }
+
+            sb.append("╚══════════════════════════════════════════════════════════════╝");
+            log.info(sb.toString());
+        } catch (Exception e) {
+            log.warn("Could not log extracted details: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Get MINIMAL JSON schema for resume extraction (optimized for low token usage)
+     */
+    private String getResumeSchema() {
+        // Compact schema - only essential fields for matching
+        return "{\"candidate_profile\":{\"name\":\"\",\"email\":\"\",\"location\":\"\"}," +
+                "\"skills\":[],\"total_experience_years\":0," +
+                "\"work_experience\":[{\"company\":\"\",\"title\":\"\",\"start\":\"YYYY-MM\",\"end\":\"YYYY-MM\",\"tech\":[]}],"
+                +
+                "\"projects\":[{\"project_name\":\"\",\"technologies_used\":[]}]," +
+                "\"education\":[{\"degree\":\"\",\"institution\":\"\",\"year\":0}]}";
+    }
+
+    /**
+     * Build MINIMAL prompt for resume extraction (optimized for low token usage)
+     */
+    private String buildResumePrompt(String schema, String text) {
+        // Send full resume text - don't truncate to ensure all skills/projects are
+        // captured
+        return "Extract resume data as JSON. Schema: " + schema +
+                "\nRules: Output ONLY valid JSON. No markdown. No explanations. " +
+                "Use empty values if data missing.\nResume:\n" + text;
     }
 
     /**
@@ -212,50 +321,52 @@ public class SkillExtractorService {
      */
     public Map<String, Object> extractJobDescriptionDetails(String text) {
         try {
-            String schema = "{\n" +
-                    "  \"job_profile\": {\n" +
-                    "    \"job_title\": \"\",\n" +
-                    "    \"department\": \"\",\n" +
-                    "    \"location\": \"\",\n" +
-                    "    \"employment_type\": \"\"\n" +
-                    "  },\n" +
-                    "\n" +
-                    "  \"required_experience_years\": 0,\n" +
-                    "\n" +
-                    "  \"skills\": {\n" +
-                    "    \"mandatory\": [],\n" +
-                    "    \"preferred\": [],\n" +
-                    "    \"tools\": [],\n" +
-                    "    \"databases\": [],\n" +
-                    "    \"cloud\": []\n" +
-                    "  },\n" +
-                    "\n" +
-                    "  \"responsibilities\": [],\n" +
-                    "\n" +
-                    "  \"nice_to_have\": [],\n" +
-                    "\n" +
-                    "  \"education_requirements\": [],\n" +
-                    "\n" +
-                    "  \"domain\": [],\n" +
-                    "\n" +
-                    "  \"keywords\": []\n" +
+            // Compact schema separating technical skills from preferred/general skills
+            String schema = "{" +
+                    "\"job_title\":\"\"," +
+                    "\"required_experience_years\":0," +
+                    "\"technical_skills\":[]," +
+                    "\"preferred_skills\":[]" +
                     "}";
 
-            String prompt = String.format(
-                    "You are an expert recruiter assistant.\n\n" +
-                            "Your task:\n" +
-                            "- Extract structured requirements from job descriptions\n" +
-                            "- Identify mandatory vs preferred skills\n" +
-                            "- Normalize skill names\n" +
-                            "- Extract minimum experience requirements\n\n" +
-                            "STRICT RULES:\n" +
-                            "- DO NOT infer requirements not explicitly stated\n" +
-                            "- DO NOT add explanations\n" +
-                            "- Output ONLY valid JSON\n" +
-                            "- Follow the schema exactly.\n\n" +
-                            "Schema:\n%s\n\n" +
-                            "Job Description:\n%s",
-                    schema, text);
+            String prompt = "Extract job requirements as JSON. Schema: " + schema +
+                    "\n\nCLASSIFICATION RULES (STRICT):" +
+                    "\n- technical_skills: ONLY include specific technologies like: Python, Java, JavaScript, React, Node.js, AWS, Docker, PostgreSQL, MongoDB, Kubernetes, Git, SQL, etc."
+                    +
+                    "\n- preferred_skills: Include EVERYTHING else like: Data Analysis, Machine Learning concepts, Communication, Agile, Problem Solving, Team collaboration, English, Leadership, etc."
+                    +
+                    "\n\nIMPORTANT: 'Data Analysis', 'Predictive AI', 'Machine Learning', 'AI' go in preferred_skills, NOT technical_skills!"
+                    +
+                    "\n\nOutput ONLY valid JSON. No markdown. No explanations." +
+                    "\n\nJob Description:\n" + text;
+            // Try OpenAI first
+            Map<String, Object> result = tryOpenAIForJD(prompt);
+
+            // If OpenAI failed, try Gemini fallback
+            if (result == null || result.isEmpty()) {
+                if (geminiApiKey != null && !geminiApiKey.isEmpty()
+                        && !geminiApiKey.equals("your_gemini_api_key_here")) {
+                    log.info("🔄 OpenAI failed for JD, trying Gemini fallback...");
+                    result = tryGemini(prompt);
+                }
+            }
+
+            if (result != null && !result.isEmpty()) {
+                log.info("✅ JD extraction successful - technical_skills: {}", result.get("technical_skills"));
+                return result;
+            }
+        } catch (Exception e) {
+            log.error("JD extraction error: {}", e.getMessage());
+        }
+        return new HashMap<>();
+    }
+
+    /**
+     * Try extracting JD with OpenAI API
+     */
+    private Map<String, Object> tryOpenAIForJD(String prompt) {
+        try {
+            log.info("📤 Calling OpenAI API for JD ({})...", openaiModel);
 
             Map<String, Object> message = new HashMap<>();
             message.put("role", "user");
@@ -264,10 +375,10 @@ public class SkillExtractorService {
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", openaiModel);
             requestBody.put("messages", List.of(message));
-            requestBody.put("max_tokens", 1500);
+            requestBody.put("max_tokens", 500); // JD extraction needs less tokens
             requestBody.put("temperature", 0.1);
 
-            String response = webClient.post()
+            String response = openaiWebClient.post()
                     .uri("/chat/completions")
                     .header("Authorization", "Bearer " + openaiApiKey)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -280,28 +391,33 @@ public class SkillExtractorService {
                 JsonNode root = objectMapper.readTree(response);
                 String content = root.path("choices").get(0).path("message").path("content").asText().trim();
                 content = content.replaceAll("```json\\s*|```\\s*", "");
+                log.info("✅ OpenAI JD extraction successful");
                 return objectMapper.readValue(content, new TypeReference<Map<String, Object>>() {
                 });
             }
         } catch (Exception e) {
-            log.error("OpenAI API error extracting JD details: {}", e.getMessage());
+            log.error("❌ OpenAI API error for JD: {}", e.getMessage());
         }
-        return new HashMap<>();
+        return null;
     }
 
     @SuppressWarnings("unchecked")
     public List<String> flattenSkills(Map<String, Object> details) {
         List<String> allSkills = new ArrayList<>();
         if (details == null || !details.containsKey("skills"))
-            return allSkills; // Return empty, caller handles fallback
+            return allSkills;
 
         try {
-            Map<String, Object> skillsMap = (Map<String, Object>) details.get("skills");
-            if (skillsMap != null) {
-                skillsMap.values().forEach(val -> {
-                    if (val instanceof List) {
+            Object skillsObj = details.get("skills");
+            // New format: skills is directly a list
+            if (skillsObj instanceof List) {
+                allSkills.addAll((List<String>) skillsObj);
+            }
+            // Old format: skills is a map with categories
+            else if (skillsObj instanceof Map) {
+                ((Map<String, Object>) skillsObj).values().forEach(val -> {
+                    if (val instanceof List)
                         allSkills.addAll((List<String>) val);
-                    }
                 });
             }
         } catch (Exception e) {
@@ -335,7 +451,7 @@ public class SkillExtractorService {
             requestBody.put("max_tokens", 300);
             requestBody.put("temperature", 0.3);
 
-            String response = webClient.post()
+            String response = openaiWebClient.post()
                     .uri("/chat/completions")
                     .header("Authorization", "Bearer " + openaiApiKey)
                     .contentType(MediaType.APPLICATION_JSON)
