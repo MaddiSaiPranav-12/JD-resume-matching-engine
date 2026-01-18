@@ -135,11 +135,63 @@ public class ApiController {
                 return ResponseEntity.badRequest().body(response);
             }
 
-            List<String> skills = skillExtractorService.extractSkills(text);
+            List<String> skills;
+            String candidateName = null;
+            Map<String, Object> details = null;
+            int experience = 0;
+
+            // Try to extract structured details first
+            try {
+                details = skillExtractorService.extractResumeDetails(text);
+                skills = skillExtractorService.flattenSkills(details);
+
+                if (details != null && !details.isEmpty()) {
+                    if (details.containsKey("candidate_profile")) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> profile = (Map<String, Object>) details.get("candidate_profile");
+                        if (profile != null) {
+                            candidateName = (String) profile.get("name");
+                        }
+                    }
+                    if (details.containsKey("total_experience_years")) {
+                        Object exp = details.get("total_experience_years");
+                        if (exp instanceof Number) {
+                            experience = ((Number) exp).intValue();
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                // Fallback to simple extraction
+                skills = skillExtractorService.extractSkills(text);
+
+                // Heuristic for name since API failed or verification
+                if (candidateName == null) {
+                    try {
+                        String[] lines = text.split("\n");
+                        for (int i = 0; i < Math.min(lines.length, 10); i++) {
+                            String line = lines[i].trim();
+                            // Look for short lines that contain only letters (and maybe dots/hyphens)
+                            // Avoid lines like "Resume", "Curriculum Vitae", Email addresses
+                            if (!line.isEmpty() && line.length() > 2 && line.length() < 40 &&
+                                    !line.contains("@") &&
+                                    !line.toLowerCase().contains("resume") &&
+                                    !line.toLowerCase().contains("curriculum") &&
+                                    line.matches("^[a-zA-Z\\s.-]+$")) {
+                                candidateName = line;
+                                break;
+                            }
+                        }
+                    } catch (Exception e) {
+                    }
+                }
+            }
 
             response.put("success", true);
             response.put("type", type);
             response.put("skills", skills);
+            response.put("candidateName", candidateName);
+            response.put("candidateExperience", experience);
+            response.put("parsedDetails", details);
             response.put("skillCount", skills.size());
 
             return ResponseEntity.ok(response);

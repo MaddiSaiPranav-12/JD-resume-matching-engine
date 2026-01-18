@@ -184,9 +184,10 @@
                             </div>
                             <div class="flex items-center gap-2">
                                 <input type="file" id="jdFileInput" accept=".pdf,.doc,.docx,.txt" class="hidden">
-                                <button id="uploadJdBtn"
-                                    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-zinc-200 bg-white hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700">
-                                    Upload
+
+                                <button id="saveJdBtn"
+                                    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-sky-200 bg-sky-50 text-sky-600 hover:bg-sky-100 dark:border-sky-900/30 dark:bg-sky-900/20 dark:text-sky-400">
+                                    Save
                                 </button>
                                 <button id="clearJdBtn"
                                     class="hidden px-3 py-1.5 rounded-lg text-xs font-medium border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/30 dark:bg-red-900/20 dark:text-red-400">
@@ -199,8 +200,8 @@
                         <div id="jdFileInfoBox" class="mb-3">
                             <div id="jdFilePlaceholder"
                                 class="cursor-pointer rounded-xl border border-dashed border-zinc-300 bg-white py-6 text-center transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/30 dark:hover:bg-zinc-800/50">
-                                <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Drop JD file
-                                    here</span>
+                                <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Click to Upload or
+                                    Drop JD file here</span>
                             </div>
                             <div id="jdFileDetails" class="hidden">
                                 <div id="jdFileName" class="text-sm font-semibold"></div>
@@ -274,6 +275,64 @@
 
                 </div>
 
+                <!-- JD Requirements Display (After Extraction) -->
+                <div id="jdRequirementsSection"
+                    class="hidden rounded-xl border border-violet-200 dark:border-violet-900/50 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-950/30 dark:to-purple-950/30 p-4">
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <div class="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/50 grid place-items-center">
+                                <svg class="w-4 h-4 text-violet-600 dark:text-violet-400" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="text-sm font-semibold text-violet-800 dark:text-violet-200">JD Requirements
+                                    Extracted</div>
+                                <div class="text-xs text-violet-600/70 dark:text-violet-400/70">Skills and experience
+                                    needed for this role</div>
+                            </div>
+                        </div>
+                        <div id="expBadge"
+                            class="hidden px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-semibold flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span id="expYearsDisplay">0+ years</span>
+                        </div>
+                    </div>
+
+                    <!-- Required Skills -->
+                    <div class="mb-3">
+                        <div
+                            class="text-xs font-semibold text-violet-700 dark:text-violet-300 mb-2 flex items-center gap-2">
+                            <span
+                                class="px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[10px]">REQUIRED</span>
+                            <span id="requiredSkillsCount" class="text-zinc-500 dark:text-zinc-400 font-normal">0
+                                skills</span>
+                        </div>
+                        <div id="requiredSkillsList" class="flex flex-wrap gap-1.5">
+                            <!-- Skills tags injected here -->
+                        </div>
+                    </div>
+
+                    <!-- Preferred Skills -->
+                    <div id="preferredSkillsSection" class="hidden">
+                        <div
+                            class="text-xs font-semibold text-violet-700 dark:text-violet-300 mb-2 flex items-center gap-2">
+                            <span
+                                class="px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px]">PREFERRED</span>
+                            <span id="preferredSkillsCount" class="text-zinc-500 dark:text-zinc-400 font-normal">0
+                                skills</span>
+                        </div>
+                        <div id="preferredSkillsList" class="flex flex-wrap gap-1.5">
+                            <!-- Preferred skills tags injected here -->
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Action Buttons -->
                 <div
                     class="flex items-center justify-between gap-4 p-3 rounded-xl bg-zinc-100/50 dark:bg-zinc-800/30 border border-zinc-200 dark:border-zinc-800">
@@ -282,19 +341,11 @@
                         <div id="skillsList" class="inline-flex gap-1"></div>
                     </div>
                     <div id="resultsPlaceholder" class="flex-1 text-zinc-400 text-xs italic">
-                        Skills extraction & matching results will appear here.
+                        Click "Extract Skills" to analyze JD requirements, then "Match & Rank" to find best candidates.
                     </div>
 
                     <div class="flex items-center gap-3 flex-none">
-                        <button id="extractBtn"
-                            class="group flex items-center gap-2 bg-gradient-to-r from-violet-500 to-purple-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:from-violet-600 hover:to-purple-700 shadow-lg shadow-violet-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z">
-                                </path>
-                            </svg>
-                            Extract Skills
-                        </button>
+
                         <button id="rankBtn"
                             class="group flex items-center gap-2 bg-gradient-to-r from-sky-500 to-cyan-500 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:from-sky-600 hover:to-cyan-600 shadow-lg shadow-sky-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -393,7 +444,7 @@
         </div>
     </div>
 
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app-v3.js"></script>
 </body>
 
 </html>
