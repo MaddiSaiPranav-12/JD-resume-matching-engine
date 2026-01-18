@@ -14,8 +14,6 @@ import java.util.*;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.YearMonth;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Skill Extractor Service
@@ -214,7 +212,11 @@ public class SkillExtractorService {
                 return parsedDetails;
             }
         } catch (Exception e) {
-            log.error("❌ Gemini API error: {}", e.getMessage());
+            // Sanitize error message to remove API key
+            String safeMessage = e.getMessage() != null
+                    ? e.getMessage().replaceAll("key=[^&\\s]+", "key=***")
+                    : "Unknown error";
+            log.error("❌ Gemini API error: {}", safeMessage);
         }
         return null;
     }
@@ -495,6 +497,7 @@ public class SkillExtractorService {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private void calculateEmploymentGaps(Map<String, Object> resumeData) {
         try {
             // 1. Get Work Experience

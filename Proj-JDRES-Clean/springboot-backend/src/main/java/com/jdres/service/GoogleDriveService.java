@@ -47,9 +47,6 @@ public class GoogleDriveService {
     private ResumeRepository resumeRepository;
 
     @Autowired
-    private EmbeddingService embeddingService; // Injected
-
-    @Autowired
     private S3Service s3Service; // Injected (Future use)
 
     @Autowired

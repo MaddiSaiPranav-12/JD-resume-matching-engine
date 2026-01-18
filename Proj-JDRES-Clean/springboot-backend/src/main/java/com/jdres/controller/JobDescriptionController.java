@@ -6,7 +6,6 @@ import com.jdres.model.Resume;
 import com.jdres.repository.JobDescriptionRepository;
 import com.jdres.repository.MatchResultRepository;
 import com.jdres.repository.ResumeRepository;
-import com.jdres.service.EmbeddingService;
 import com.jdres.service.MatchingService;
 import com.jdres.service.SkillExtractorService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,9 +22,6 @@ public class JobDescriptionController {
 
     @Autowired
     private JobDescriptionRepository jobDescriptionRepository;
-
-    @Autowired
-    private EmbeddingService embeddingService;
 
     @Autowired
     private SkillExtractorService skillExtractorService;
@@ -256,16 +252,27 @@ public class JobDescriptionController {
                     result.setSkillMatchScore(((Number) matchData.get("skillMatchScore")).doubleValue());
                 }
 
-                // Lists - handle unchecked casts
-                if (matchData.get("matchedSkills") instanceof List) {
-                    result.setMatchedSkillsList((List<String>) matchData.get("matchedSkills"));
-                }
-                if (matchData.get("missingSkills") instanceof List) {
-                    result.setMissingSkillsList((List<String>) matchData.get("missingSkills"));
-                }
-                if (matchData.get("relevantProjects") instanceof List) {
-                    result.setRelevantProjects((List<String>) matchData.get("relevantProjects"));
-                }
+                // Lists - handle unchecked casts safely
+                @SuppressWarnings("unchecked")
+                List<String> matchedSkillsCast = matchData.get("matchedSkills") instanceof List
+                        ? (List<String>) matchData.get("matchedSkills")
+                        : null;
+                if (matchedSkillsCast != null)
+                    result.setMatchedSkillsList(matchedSkillsCast);
+
+                @SuppressWarnings("unchecked")
+                List<String> missingSkillsCast = matchData.get("missingSkills") instanceof List
+                        ? (List<String>) matchData.get("missingSkills")
+                        : null;
+                if (missingSkillsCast != null)
+                    result.setMissingSkillsList(missingSkillsCast);
+
+                @SuppressWarnings("unchecked")
+                List<String> relevantProjectsCast = matchData.get("relevantProjects") instanceof List
+                        ? (List<String>) matchData.get("relevantProjects")
+                        : null;
+                if (relevantProjectsCast != null)
+                    result.setRelevantProjects(relevantProjectsCast);
 
                 // Metadata
                 if (matchData.get("candidateExperience") instanceof Number) {

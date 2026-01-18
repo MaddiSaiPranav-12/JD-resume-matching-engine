@@ -335,7 +335,6 @@ public class MatchingService {
         return false;
     }
 
-    @SuppressWarnings("unchecked")
     private int extractTotalExperience(Map<String, Object> parsedDetails) {
         if (parsedDetails == null)
             return 0;

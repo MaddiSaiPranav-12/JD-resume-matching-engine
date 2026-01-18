@@ -2,7 +2,6 @@ package com.jdres.controller;
 
 import com.jdres.model.Resume;
 import com.jdres.repository.ResumeRepository;
-import com.jdres.service.EmbeddingService;
 import com.jdres.service.S3Service;
 import com.jdres.service.SkillExtractorService;
 import org.apache.pdfbox.Loader;
@@ -25,8 +24,6 @@ public class ResumeController {
     private ResumeRepository resumeRepository;
     @Autowired
     private S3Service s3Service;
-    @Autowired
-    private EmbeddingService embeddingService;
     @Autowired
     private SkillExtractorService skillExtractorService;
     @Autowired

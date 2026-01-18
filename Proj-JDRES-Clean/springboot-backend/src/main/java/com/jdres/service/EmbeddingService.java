@@ -41,11 +41,15 @@ public class EmbeddingService {
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
         try {
-            Map response = restTemplate.postForObject(url, entity, Map.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = restTemplate.postForObject(url, entity, Map.class);
             if (response != null && response.containsKey("data")) {
+                @SuppressWarnings("unchecked")
                 List<Map<String, Object>> data = (List<Map<String, Object>>) response.get("data");
                 if (!data.isEmpty()) {
-                    return (List<Double>) data.get(0).get("embedding");
+                    @SuppressWarnings("unchecked")
+                    List<Double> embedding = (List<Double>) data.get(0).get("embedding");
+                    return embedding;
                 }
             }
             return Collections.emptyList();

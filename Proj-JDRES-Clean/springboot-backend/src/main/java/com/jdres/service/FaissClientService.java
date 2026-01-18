@@ -33,6 +33,7 @@ public class FaissClientService {
      * 
      * @return true if service is healthy
      */
+    @SuppressWarnings("unchecked")
     public boolean isHealthy() {
         try {
             Map<String, Object> response = webClient.get()
@@ -56,6 +57,7 @@ public class FaissClientService {
      * @param resumeIds   - Array of resume identifiers
      * @return Build result
      */
+    @SuppressWarnings("unchecked")
     public Map<String, Object> buildIndex(List<String> resumeTexts, List<String> resumeIds) {
         try {
             Map<String, Object> requestBody = new HashMap<>();
@@ -82,6 +84,7 @@ public class FaissClientService {
      * @param topK   - Number of top results to return
      * @return Search results
      */
+    @SuppressWarnings("unchecked")
     public Map<String, Object> searchSimilarResumes(String jdText, int topK) {
         try {
             Map<String, Object> requestBody = new HashMap<>();
