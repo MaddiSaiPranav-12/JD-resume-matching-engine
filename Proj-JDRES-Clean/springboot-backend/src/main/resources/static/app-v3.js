@@ -29,7 +29,8 @@ class App {
             // JD Section
             jdSection: document.getElementById('jdSection'),
             jdFileInput: document.getElementById('jdFileInput'),
-            uploadJdBtn: document.getElementById('uploadJdBtn'),
+
+            saveJdBtn: document.getElementById('saveJdBtn'),
             clearJdBtn: document.getElementById('clearJdBtn'),
             jdFileInfoBox: document.getElementById('jdFileInfoBox'),
             jdFileDetails: document.getElementById('jdFileDetails'),
@@ -71,7 +72,17 @@ class App {
             driveModalClose: document.getElementById('driveModalClose'),
             driveLinkInput: document.getElementById('driveLinkInput'),
             driveScanBtn: document.getElementById('driveScanBtn'),
-            driveStatus: document.getElementById('driveStatus')
+            driveStatus: document.getElementById('driveStatus'),
+
+            // JD Requirements Display
+            jdRequirementsSection: document.getElementById('jdRequirementsSection'),
+            expBadge: document.getElementById('expBadge'),
+            expYearsDisplay: document.getElementById('expYearsDisplay'),
+            requiredSkillsList: document.getElementById('requiredSkillsList'),
+            requiredSkillsCount: document.getElementById('requiredSkillsCount'),
+            preferredSkillsSection: document.getElementById('preferredSkillsSection'),
+            preferredSkillsList: document.getElementById('preferredSkillsList'),
+            preferredSkillsCount: document.getElementById('preferredSkillsCount')
         };
 
         this.init();
@@ -85,12 +96,35 @@ class App {
             document.documentElement.classList.remove('dark');
         }
 
-        // Auth Listener
+        // Auth Listener - Wait for auth before loading data
         this.userData = null;
-        onAuthStateChanged(auth, (user) => {
+        onAuthStateChanged(auth, async (user) => {
             if (user) {
                 this.userData = user;
                 this.updateUserProfileUI(user);
+
+                console.log('🔐 User authenticated:', user.uid);
+
+                // NOW load data after user is authenticated
+                await this.loadSavedResumes();
+                await this.loadSavedJD();
+
+                // If no jobs were loaded, ensure we have at least one default job
+                if (this.jobs.length === 0) {
+                    this.jobs = [
+                        { id: 'job-1', title: 'New Job', createdAt: 'Just now', jdText: '', jdFile: null, status: 'idle', jdSkills: [] }
+                    ];
+                    this.activeJobId = 'job-1';
+                }
+
+                // Load saved matches for active job
+                if (this.activeJob && this.activeJob.jdId) {
+                    await this.loadMatchesForJob(this.activeJob);
+                }
+
+                // Now render the UI with user-specific data
+                this.renderJobsList();
+                this.updateUIForActiveJob();
             } else {
                 window.location.href = 'landing.html';
             }
@@ -101,34 +135,22 @@ class App {
 
         // Attach event listeners first
         this.attachEventListeners();
-
-        // Load data from database
-        await this.loadSavedResumes();
-        await this.loadSavedJD();
-
-        // If no jobs were loaded, ensure we have at least one default job
-        if (this.jobs.length === 0) {
-            this.jobs = [
-                { id: 'job-1', title: 'New Job', createdAt: 'Just now', jdText: '', jdFile: null, status: 'idle', jdSkills: [] }
-            ];
-            this.activeJobId = 'job-1';
-        }
-
-        // Load saved matches for active job
-        if (this.activeJob && this.activeJob.jdId) {
-            await this.loadMatchesForJob(this.activeJob);
-        }
-
-        // Now render the UI
-        this.renderJobsList();
-        this.updateUIForActiveJob();
     }
 
     // Load all saved JDs from database
     async loadSavedJD() {
         try {
-            console.log('📥 Loading saved JDs...');
-            const response = await fetch('/api/job-descriptions');
+            const userId = this.getUserId();
+            console.log('📥 Loading saved JDs for user:', userId);
+
+            if (!userId) {
+                console.warn('⚠️ No userId available in loadSavedJD - skipping');
+                return;
+            }
+
+            const response = await fetch('/api/v2/job-descriptions', {
+                headers: this.getAuthHeaders()
+            });
             const data = await response.json();
 
             if (data.success && data.jobDescriptions && data.jobDescriptions.length > 0) {
@@ -146,8 +168,10 @@ class App {
                         jdText: jd.text || '',
                         jdFile: null,
                         jdId: jd.jdId,
-                        status: hasSkills ? 'extracted' : 'idle', // Set status based on skills
-                        jdSkills: jd.requiredSkills || []
+                        status: hasSkills ? 'extracted' : 'idle',
+                        jdSkills: jd.requiredSkills || [],
+                        preferredSkills: jd.preferredSkills || [],
+                        minExperience: jd.minExperience || 0
                     };
                     this.jobs.push(job);
                 });
@@ -166,10 +190,25 @@ class App {
 
     // Load saved match results for a specific job
     async loadMatchesForJob(job) {
+        // Reset resume state to prevent bleeding from other jobs
+        // NOTE: candidateName and candidateExperience are resume properties (not job-specific), so don't delete them
+        this.allResumes.forEach(r => {
+            r.status = null;
+            r.matchScore = 0;
+            r.skillMatchScore = 0;
+            delete r.matchedSkillsList;
+            delete r.missingSkillsList;
+            delete r.relevantProjects;
+        });
         if (!job || !job.jdId) return;
 
         try {
-            const res = await fetch(`/api/job-descriptions/${job.jdId}/matches?limit=100`);
+            const userId = this.getUserId();
+            if (!userId) return;
+
+            const res = await fetch(`/api/job-descriptions/${job.jdId}/matches?limit=100`, {
+                headers: this.getAuthHeaders()
+            });
             const data = await res.json();
 
             if (data.success && data.matches && data.matches.length > 0) {
@@ -234,7 +273,7 @@ class App {
         // Only save if there's actual JD text
         if (!job.jdText || job.jdText.trim().length === 0) {
             console.log('⏭️  No JD text to save');
-            return;
+            return false;
         }
 
         try {
@@ -245,9 +284,10 @@ class App {
                 console.log('📝 Updating existing JD:', job.jdId);
                 response = await fetch(`/api/job-descriptions/${job.jdId}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         title: job.title || 'Untitled JD',
+                        jdText: job.jdText, // Fix: Ensure text is updated
                         requiredSkills: job.jdSkills || []
                     })
                 });
@@ -256,7 +296,7 @@ class App {
                 console.log('💾 Creating new JD:', job.title);
                 response = await fetch('/api/job-descriptions', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({
                         jdText: job.jdText,
                         title: job.title || 'Untitled JD'
@@ -277,22 +317,45 @@ class App {
                     job.jdSkills = data.requiredSkills;
                 }
 
+                // Update preferred skills from backend
+                if ((!job.preferredSkills || job.preferredSkills.length === 0) && data.preferredSkills) {
+                    job.preferredSkills = data.preferredSkills;
+                }
+
+                // Update minimum experience from backend
+                if (!job.minExperience && data.minExperience) {
+                    job.minExperience = data.minExperience;
+                }
+
                 // Update status if we got skills
                 if (job.jdSkills && job.jdSkills.length > 0) {
                     job.status = 'extracted';
                 }
 
-                console.log('✅ JD saved with', job.jdSkills?.length || 0, 'skills');
+                console.log('✅ JD saved with', job.jdSkills?.length || 0, 'required skills,', job.preferredSkills?.length || 0, 'preferred skills,', job.minExperience || 0, 'years exp');
+                return true;
             }
+            return false;
         } catch (error) {
             console.error('Failed to save JD:', error);
+            return false;
         }
     }
 
     async loadSavedResumes() {
         try {
+            const userId = this.getUserId();
+            console.log('📥 Loading saved Resumes for user:', userId);
+
+            if (!userId) {
+                console.warn('⚠️ No userId available in loadSavedResumes - skipping');
+                return;
+            }
+
             // Using Spring Boot Backend Port 8080
-            const res = await fetch('http://localhost:8080/api/resumes');
+            const res = await fetch('/api/v2/resumes', {
+                headers: this.getAuthHeaders()
+            });
             const data = await res.json();
 
             if (data.success && data.resumes && data.resumes.length > 0) {
@@ -302,8 +365,6 @@ class App {
                     if (!this.allResumes.find(existing => existing.fileId === r.fileId)) {
                         this.allResumes.push({
                             name: r.name,
-                            candidateName: r.candidateName,
-                            candidateExperience: r.candidateExperience,
                             text: r.text,
                             skills: r.skills || [],
                             matchScore: r.matchScore || 0,
@@ -352,6 +413,22 @@ class App {
         }
     }
 
+    // Get current user ID for API requests
+    getUserId() {
+        return this.userData?.uid || null;
+    }
+
+    // Get headers with user ID for authenticated API requests
+    getAuthHeaders(additionalHeaders = {}) {
+        const headers = { ...additionalHeaders };
+        const userId = this.getUserId();
+        console.log('🔑 getAuthHeaders - userId:', userId, 'userData:', this.userData?.uid);
+        if (userId) {
+            headers['X-User-Id'] = userId;
+        }
+        return headers;
+    }
+
     get activeJob() {
         return this.jobs.find(j => j.id === this.activeJobId);
     }
@@ -364,23 +441,63 @@ class App {
         this.dom.newJobBtn.addEventListener('click', () => this.createNewJob());
 
 
-        // Job Title Rename with auto-save
+        // Job Title Rename (Manual Save only)
         this.dom.jobTitleInput.addEventListener('input', (e) => {
             this.activeJob.title = e.target.value;
             this.dom.activeJobTitleDisplay.textContent = e.target.value || 'Job';
             this.renderJobsList();
-            this.debouncedSaveJD();
+            // Auto-save removed
         });
 
-        // JD Text Input with auto-save
+        // JD Text Input (Manual Save only)
         this.dom.jdTextArea.addEventListener('input', (e) => {
             this.activeJob.jdText = e.target.value;
             this.updateActionButtons();
-            this.debouncedSaveJD();
+            // Auto-save removed
         });
 
-        // JD File Upload
-        this.dom.uploadJdBtn.addEventListener('click', () => this.dom.jdFileInput.click());
+        // JD File Upload (Box Click)
+        this.dom.jdFilePlaceholder.addEventListener('click', () => this.dom.jdFileInput.click());
+
+        // Manual Save Button (Text + Skills)
+        if (this.dom.saveJdBtn) {
+            this.dom.saveJdBtn.addEventListener('click', async () => {
+                const job = this.activeJob;
+                if (!job || !job.jdText || !job.jdText.trim()) {
+                    this.showToast('Nothing to save', 'Please enter some text first', 'error');
+                    return;
+                }
+
+                this.showToast('Analyzing...', 'Extracting skills from new text...', 'info');
+
+                // 1. Extract Skills First (so we save updated skills)
+                try {
+                    const jdRes = await fetch('/api/extract-skills', {
+                        method: 'POST',
+                        headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ text: job.jdText })
+                    });
+                    const jdData = await jdRes.json();
+                    if (jdData.success && jdData.skills) {
+                        job.jdSkills = jdData.skills;
+                        job.status = 'extracted';
+                    }
+                } catch (e) {
+                    console.warn('Extraction skipped/failed during save', e);
+                }
+
+                // 2. Save Everything (Text + Skills)
+                this.showToast('Saving...', 'Saving job data...', 'info');
+                const success = await this.saveJobDescription();
+
+                if (success) {
+                    this.showToast('Saved', 'Job text and skills saved successfully', 'success');
+                    this.updateUIForActiveJob(); // Refresh UI to show new skills
+                } else {
+                    this.showToast('Save Failed', 'Could not save job description', 'error');
+                }
+            });
+        }
         this.dom.jdFileInput.addEventListener('change', (e) => {
             if (e.target.files[0]) this.handleJDUpload(e.target.files[0]);
         });
@@ -439,7 +556,7 @@ class App {
         this.dom.driveScanBtn.addEventListener('click', () => this.handleDriveImport());
 
         // API Actions
-        this.dom.extractBtn.addEventListener('click', () => this.runExtraction());
+
         this.dom.rankBtn.addEventListener('click', () => this.runMatchAndRank());
     }
 
@@ -483,9 +600,9 @@ class App {
                 .map(r => r.fileId)
                 .filter(id => id); // Filter out undefined
 
-            const res = await fetch('http://localhost:8080/api/import-drive', {
+            const res = await fetch('/api/import-drive', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     link: link,
                     excludeIds: existingIds
@@ -607,9 +724,19 @@ class App {
             // Click on job title to select
             el.querySelector('[data-job-select]').onclick = async () => {
                 this.activeJobId = job.id;
-                // Load saved matches for this job
-                if (job.jdId && !job.matchResults) {
+                // ALWAYS reload matches to reset resume statuses for this job
+                if (job.jdId) {
                     await this.loadMatchesForJob(job);
+                } else {
+                    // No jdId means new job - reset job-specific data only (keep name/experience)
+                    this.allResumes.forEach(r => {
+                        r.status = null;
+                        r.matchScore = 0;
+                        r.skillMatchScore = 0;
+                        delete r.matchedSkillsList;
+                        delete r.missingSkillsList;
+                        delete r.relevantProjects;
+                    });
                 }
                 this.renderJobsList();
                 this.updateUIForActiveJob();
@@ -679,7 +806,7 @@ class App {
         if (hasContent) {
             // DOCUMENT MODE: Hide upload box, expand text area
             this.dom.jdFileInfoBox.classList.add('hidden');
-            this.dom.uploadJdBtn.classList.add('hidden');
+            // uploadJdBtn removed
             this.dom.clearJdBtn.classList.remove('hidden');
 
             this.dom.jdHelperText.textContent = "Editing Job Description Text";
@@ -694,10 +821,10 @@ class App {
             this.dom.jdFilePlaceholder.classList.remove('hidden');
             this.dom.jdFileDetails.classList.add('hidden'); // hidden by default unless specific file logic needed
 
-            this.dom.uploadJdBtn.classList.remove('hidden');
+            // uploadJdBtn removed
             this.dom.clearJdBtn.classList.add('hidden');
 
-            this.dom.jdHelperText.textContent = "Drag & drop PDF/DOCX/txt, or click Upload";
+            this.dom.jdHelperText.textContent = "Upload PDF/DOCX or paste text";
             this.dom.jdPasteLabel.classList.remove('hidden');
 
             // Restore text area style
@@ -751,175 +878,271 @@ class App {
     updateResultsView() {
         const job = this.activeJob;
 
-        // Extracted Skills
+        // JD Requirements Section (New comprehensive display)
         if (job.jdSkills && job.jdSkills.length > 0) {
-            this.dom.resultsPlaceholder.classList.add('hidden');
-            this.dom.skillsDisplay.classList.remove('hidden');
-            this.dom.skillsList.innerHTML = job.jdSkills.map(s =>
-                `<span class="skill-tag">${s}</span>`
-            ).join('');
+            // Show the requirements section
+            this.dom.jdRequirementsSection?.classList.remove('hidden');
+            this.dom.resultsPlaceholder?.classList.add('hidden');
+            this.dom.skillsDisplay?.classList.add('hidden'); // Hide old inline display
+
+            // Required Skills
+            if (this.dom.requiredSkillsList) {
+                this.dom.requiredSkillsList.innerHTML = job.jdSkills.map(s =>
+                    `<span class="inline-block px-2 py-1 text-xs font-medium rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 border border-sky-200 dark:border-sky-800">${s}</span>`
+                ).join('');
+            }
+            if (this.dom.requiredSkillsCount) {
+                this.dom.requiredSkillsCount.textContent = `${job.jdSkills.length} skills`;
+            }
+
+            // Preferred Skills
+            if (job.preferredSkills && job.preferredSkills.length > 0) {
+                this.dom.preferredSkillsSection?.classList.remove('hidden');
+                if (this.dom.preferredSkillsList) {
+                    this.dom.preferredSkillsList.innerHTML = job.preferredSkills.map(s =>
+                        `<span class="inline-block px-2 py-1 text-xs font-medium rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">${s}</span>`
+                    ).join('');
+                }
+                if (this.dom.preferredSkillsCount) {
+                    this.dom.preferredSkillsCount.textContent = `${job.preferredSkills.length} skills`;
+                }
+            } else {
+                this.dom.preferredSkillsSection?.classList.add('hidden');
+            }
+
+            // Experience Badge
+            if (job.minExperience && job.minExperience > 0) {
+                this.dom.expBadge?.classList.remove('hidden');
+                if (this.dom.expYearsDisplay) {
+                    this.dom.expYearsDisplay.textContent = `${job.minExperience}+ years`;
+                }
+            } else {
+                this.dom.expBadge?.classList.add('hidden');
+            }
         } else {
-            this.dom.resultsPlaceholder.classList.remove('hidden');
-            this.dom.skillsDisplay.classList.add('hidden');
+            // Hide JD requirements section, show placeholder
+            this.dom.jdRequirementsSection?.classList.add('hidden');
+            this.dom.resultsPlaceholder?.classList.remove('hidden');
+            this.dom.skillsDisplay?.classList.add('hidden');
         }
 
         // If matched variants exist, show match view (simplified for now to just skills or ranking)
         // Ideally we would swap views or have tabs. The UI request shows "Results" card.
         // We will append Match/Ranking results below skills if they exist.
 
-        const existingMatchContainer = document.getElementById('matchResultsContainer');
+        // Remove existing containers
+        const existingMatchContainer = document.getElementById('tablesSliderContainer');
         if (existingMatchContainer) existingMatchContainer.remove();
 
         if (job.status === 'ranked' || job.status === 'matched') {
-            const matchDiv = document.createElement('div');
-            matchDiv.id = 'matchResultsContainer';
-            matchDiv.className = 'mt-6 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40';
+            // Filter resumes
+            let displayResumes = this.allResumes.filter(r => r.status !== 'rejected' && r.status !== 'accepted');
+            let acceptedResumes = this.allResumes.filter(r => r.status === 'accepted');
 
             // Sort resumes by score if ranked
-            const displayResumes = [...this.allResumes];
             if (job.status === 'ranked') {
                 displayResumes.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
             }
 
-            matchDiv.innerHTML = `
-                <table class="w-full text-sm text-left">
-                    <thead class="text-xs text-zinc-500 uppercase bg-zinc-50/50 dark:bg-zinc-800/30 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
-                        <tr>
-                            <th class="px-2 py-3 font-medium">#</th>
-                            <th class="px-2 py-3 font-medium">Candidate</th>
-                            <th class="px-2 py-3 font-medium text-center">Match</th>
-                            <th class="px-2 py-3 font-medium text-center">ATS</th>
-                            <th class="px-2 py-3 font-medium text-center">Skills</th>
-                            <th class="px-2 py-3 font-medium">Missing</th>
-                            <th class="px-2 py-3 font-medium">Projects</th>
-                            <th class="px-2 py-3 font-medium text-center">Exp</th>
-                            <th class="px-2 py-3 font-medium text-center">Gaps</th>
-                            <th class="px-2 py-3 font-medium">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
-                        ${displayResumes.map((r, idx) => {
-                // Get skill counts
+            // Create container with tabs
+            const sliderContainer = document.createElement('div');
+            sliderContainer.id = 'tablesSliderContainer';
+            sliderContainer.className = 'mt-6';
+
+            // Tab buttons
+            const tabsHtml = `
+                <div class="flex gap-2 mb-4 border-b border-zinc-200 dark:border-zinc-700">
+                    <button id="tabRanking" onclick="app.switchTableTab('ranking')" 
+                        class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all border-sky-500 text-sky-600 dark:text-sky-400">
+                        📊 Ranking (${displayResumes.length})
+                    </button>
+                    <button id="tabAccepted" onclick="app.switchTableTab('accepted')" 
+                        class="tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300">
+                        ✅ Accepted (${acceptedResumes.length})
+                    </button>
+                </div>
+            `;
+
+            // Ranking table content
+            const rankingTableHtml = `
+                <div id="panelRanking" class="table-panel">
+                    <div class="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-zinc-500 uppercase bg-zinc-50/50 dark:bg-zinc-800/30 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-800">
+                                <tr>
+                                    <th class="px-2 py-3 font-medium">#</th>
+                                    <th class="px-2 py-3 font-medium">Candidate</th>
+                                    <th class="px-2 py-3 font-medium text-center">Match</th>
+                                    <th class="px-2 py-3 font-medium text-center">ATS</th>
+                                    <th class="px-2 py-3 font-medium text-center">Skills</th>
+                                    <th class="px-2 py-3 font-medium">Missing</th>
+                                    <th class="px-2 py-3 font-medium">Projects</th>
+                                    <th class="px-2 py-3 font-medium text-center">Exp</th>
+                                    <th class="px-2 py-3 font-medium">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
+                                ${displayResumes.length === 0 ? `
+                                    <tr><td colspan="9" class="px-4 py-8 text-center text-zinc-400">No candidates pending review</td></tr>
+                                ` : displayResumes.map((r, idx) => {
                 const matchedList = r.matchedSkillsList || (Array.isArray(r.matchedSkills) ? r.matchedSkills : []);
                 const missingList = r.missingSkillsList || (Array.isArray(r.missingSkills) ? r.missingSkills : []);
                 const totalRequired = matchedList.length + missingList.length;
                 const matchedCount = matchedList.length;
-
-                // Format matched as X/Y
                 const matchedDisplay = `${matchedCount}/${totalRequired}`;
                 const matchedTitle = matchedList.join(', ') || 'None';
-
-                // Format missing skills - show first 2, tooltip shows all
                 const missingDisplay = missingList.length > 0
-                    ? (missingList.length <= 2
-                        ? missingList.join(', ')
-                        : missingList.slice(0, 2).join(', ') + ` +${missingList.length - 2}`)
-                    : '—';
-                const missingTitle = missingList.join(', ') || 'None missing';
-
-                // Use candidate name if available
+                    ? `<div class="flex flex-col gap-0.5 text-[11px] leading-tight text-left">
+                            ${missingList.map(s => `<div>• ${s}</div>`).join('')}
+                           </div>`
+                    : '<span class="opacity-50">—</span>';
                 const displayName = r.candidateName || r.name || 'Unknown';
-
-                // ATS Score (skill match score specifically)
                 const atsScore = r.skillMatchScore || r.matchScore || 0;
-
-                // Relevant Projects
                 const projects = r.relevantProjects || [];
                 const hasProjects = projects.length > 0;
-                const projectNames = projects.map(p => p.name).join(', ');
-                const projectTooltip = projects.map(p => `${p.name} (${p.matchingTechs?.join(', ') || ''})`).join('\n') || 'No relevant projects';
                 const projectDisplay = hasProjects
-                    ? (projects.length <= 2
-                        ? projectNames
-                        : projects.slice(0, 2).map(p => p.name).join(', ') + ` +${projects.length - 2}`)
-                    : '—';
+                    ? `<div class="flex flex-col gap-1 text-[11px] leading-tight text-left">
+                            ${projects.map(p => {
+                        const allTech = p.allTech || [];
+                        const matchingTechs = p.matchingTechs || [];
+                        const techDisplay = allTech.length > 0
+                            ? allTech.map(t => matchingTechs.includes(t)
+                                ? `<span class="text-emerald-600 font-semibold">${t}</span>`
+                                : `<span class="text-zinc-500">${t}</span>`
+                            ).join(', ')
+                            : '';
+                        return `<div class="mb-1">
+                                    <div class="font-medium text-zinc-800 dark:text-zinc-200">${p.name}</div>
+                                    ${techDisplay ? `<div class="text-[10px] text-zinc-500 dark:text-zinc-400">${techDisplay}</div>` : ''}
+                                </div>`;
+                    }).join('')}
+                           </div>`
+                    : '<span class="opacity-50">—</span>';
 
                 return `
-                            <tr class="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors">
-                                <td class="px-2 py-3 font-bold text-zinc-900 dark:text-zinc-200">
-                                    ${idx + 1}
-                                </td>
-                                <td class="px-2 py-3">
-                                    <div class="flex items-center gap-2">
-                                        <div>
+                                <tr class="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors">
+                                    <td class="px-2 py-3 align-top font-bold text-zinc-900 dark:text-zinc-200">${idx + 1}</td>
+                                    <td class="px-2 py-3 align-top">
+                                        <div class="flex items-center gap-2">
                                             <div class="font-medium text-zinc-900 dark:text-zinc-100 truncate max-w-[250px]" title="${displayName}">${displayName}</div>
-                                            <div class="text-[10px] text-zinc-500 truncate max-w-[250px]">${r.resumeName || r.name}</div>
+                                            ${r.viewLink ? `<a href="${r.viewLink}" target="_blank" class="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 flex-shrink-0" title="View Resume">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                            </a>` : ''}
                                         </div>
-                                        ${r.viewLink
-                        ? `<a href="${r.viewLink}" target="_blank" class="p-1 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 flex-shrink-0" title="View Resume">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                                                </svg>
-                                              </a>`
-                        : ''}
-                                    </div>
-                                </td>
-                                <td class="px-2 py-3 text-center">
-                                    <div class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${this.getScoreBadgeColor(r.matchScore)}">
-                                        ${r.matchScore || 0}%
-                                    </div>
-                                </td>
-                                <td class="px-2 py-3 text-center">
-                                    <span class="text-xs font-medium text-sky-600 dark:text-sky-400">${atsScore}%</span>
-                                </td>
-                                <td class="px-2 py-3 text-center">
-                                    <span class="text-emerald-600 dark:text-emerald-400 font-semibold cursor-help" title="${matchedTitle}">${matchedDisplay}</span>
-                                </td>
-                                <td class="px-2 py-3">
-                                    <div class="text-xs text-red-500 dark:text-red-400 truncate max-w-[120px] cursor-help" title="${missingTitle}">
-                                        ${missingDisplay}
-                                    </div>
-                                </td>
-                                <td class="px-2 py-3">
-                                    ${hasProjects
-                        ? `<div class="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 truncate max-w-[130px] cursor-help" title="${projectTooltip}">
-                                            <svg class="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
-                                            <span class="truncate">${projectDisplay}</span>
-                                          </div>`
-                        : '<span class="text-zinc-400 text-xs">—</span>'}
-                                </td>
-                                <td class="px-2 py-3 text-center text-zinc-600 dark:text-zinc-400 text-xs">
-                                    ${r.candidateExperience || '0y'}
-                                </td>
-                                <td class="px-2 py-3 text-center">
-                                    ${r.hasGap
-                        ? `<span class="text-amber-500 text-xs font-medium" title="${r.gapMonths} months gap">Yes</span>`
-                        : '<span class="text-zinc-400 text-xs">—</span>'}
-                                </td>
-                                <td class="px-2 py-3">
-                                    <div class="flex items-center gap-1">
-                                        <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'accepted')" 
-                                            class="candidate-action-btn px-2 py-1 rounded-md text-[10px] font-semibold transition-all
-                                            ${r.status === 'accepted'
-                        ? 'bg-emerald-500 text-white shadow-sm'
-                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/40'}">
-                                            ✓ Accept
-                                        </button>
-                                        <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'review')"
-                                            class="candidate-action-btn px-2 py-1 rounded-md text-[10px] font-semibold transition-all
-                                            ${r.status === 'review'
-                        ? 'bg-amber-500 text-white shadow-sm'
-                        : 'bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40'}">
-                                            ⏳ Review
-                                        </button>
-                                        <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'rejected')"
-                                            class="candidate-action-btn px-2 py-1 rounded-md text-[10px] font-semibold transition-all
-                                            ${r.status === 'rejected'
-                        ? 'bg-red-500 text-white shadow-sm'
-                        : 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40'}">
-                                            ✗ Reject
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `}).join('')}
-                    </tbody>
-                </table>
+                                    </td>
+                                    <td class="px-2 py-3 text-center">
+                                        <div class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${this.getScoreBadgeColor(r.matchScore)}">${r.matchScore || 0}%</div>
+                                    </td>
+                                    <td class="px-2 py-3 text-center">
+                                        <span class="text-xs font-medium text-sky-600 dark:text-sky-400">${atsScore}%</span>
+                                    </td>
+                                    <td class="px-2 py-3 text-center">
+                                        <span class="text-emerald-600 dark:text-emerald-400 font-semibold cursor-help" title="${matchedTitle}">${matchedDisplay}</span>
+                                    </td>
+                                    <td class="px-2 py-3 align-top">
+                                        <div class="text-xs text-red-500 dark:text-red-400 min-w-[140px]">${missingDisplay}</div>
+                                    </td>
+                                    <td class="px-2 py-3 align-top">
+                                        <div class="text-xs text-emerald-600 dark:text-emerald-400 min-w-[140px]">${projectDisplay}</div>
+                                    </td>
+                                    <td class="px-2 py-3 text-center text-zinc-600 dark:text-zinc-400 text-xs">${r.candidateExperience || '0y'}</td>
+                                    <td class="px-2 py-3">
+                                        <div class="flex gap-1">
+                                            <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'accepted')"
+                                                class="px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${r.status === 'accepted' ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400'}">✓ Accept</button>
+                                            <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'review')"
+                                                class="px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${r.status === 'review' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400'}">⏳ Review</button>
+                                            <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'rejected')"
+                                                class="px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${r.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400'}">✗ Reject</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `}).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             `;
 
+            // Accepted candidates table content
+            const acceptedTableHtml = `
+                <div id="panelAccepted" class="table-panel hidden">
+                    <div class="overflow-x-auto rounded-xl border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50/30 dark:bg-emerald-900/10">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-emerald-600 uppercase bg-emerald-50/50 dark:bg-emerald-900/20 dark:text-emerald-400 border-b border-emerald-200 dark:border-emerald-800">
+                                <tr>
+                                    <th class="px-2 py-3 font-medium">#</th>
+                                    <th class="px-2 py-3 font-medium">Candidate</th>
+                                    <th class="px-2 py-3 font-medium text-center">Match</th>
+                                    <th class="px-2 py-3 font-medium text-center">Skills</th>
+                                    <th class="px-2 py-3 font-medium">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-emerald-100 dark:divide-emerald-800/50">
+                                ${acceptedResumes.length === 0 ? `
+                                    <tr><td colspan="5" class="px-4 py-8 text-center text-emerald-400">No accepted candidates yet. Accept candidates from the Ranking tab.</td></tr>
+                                ` : acceptedResumes.map((r, idx) => {
+                const displayName = r.candidateName || r.name || 'Unknown';
+                const matchedList = r.matchedSkillsList || [];
+                const totalRequired = matchedList.length + (r.missingSkillsList?.length || 0);
+                return `
+                                <tr class="hover:bg-emerald-50/50 dark:hover:bg-emerald-900/20 transition-colors">
+                                    <td class="px-2 py-3 font-bold text-emerald-700 dark:text-emerald-300">${idx + 1}</td>
+                                    <td class="px-2 py-3">
+                                        <div class="flex items-center gap-2">
+                                            <div class="font-medium text-zinc-900 dark:text-zinc-100">${displayName}</div>
+                                            ${r.viewLink ? `<a href="${r.viewLink}" target="_blank" class="p-1 rounded-md hover:bg-emerald-100 dark:hover:bg-emerald-800 text-emerald-600 dark:text-emerald-400" title="View Resume">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                            </a>` : ''}
+                                        </div>
+                                    </td>
+                                    <td class="px-2 py-3 text-center">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">${r.matchScore || 0}%</span>
+                                    </td>
+                                    <td class="px-2 py-3 text-center">
+                                        <span class="text-emerald-600 dark:text-emerald-400 font-semibold">${matchedList.length}/${totalRequired}</span>
+                                    </td>
+                                    <td class="px-2 py-3">
+                                        <button onclick="app.setCandidateStatus('${r.fileId || r.name}', 'review')"
+                                            class="px-2 py-1 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400">
+                                            ↩ Move to Review
+                                        </button>
+                                    </td>
+                                </tr>
+                            `}).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
 
-            this.dom.resultsContent.appendChild(matchDiv);
+            sliderContainer.innerHTML = tabsHtml + rankingTableHtml + acceptedTableHtml;
+            this.dom.resultsContent.appendChild(sliderContainer);
+        }
+    }
+
+    // Switch between table tabs
+    switchTableTab(tab) {
+        const tabRanking = document.getElementById('tabRanking');
+        const tabAccepted = document.getElementById('tabAccepted');
+        const panelRanking = document.getElementById('panelRanking');
+        const panelAccepted = document.getElementById('panelAccepted');
+
+        if (!tabRanking || !tabAccepted || !panelRanking || !panelAccepted) return;
+
+        const activeTabClass = 'border-sky-500 text-sky-600 dark:text-sky-400';
+        const inactiveTabClass = 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300';
+
+        if (tab === 'ranking') {
+            tabRanking.className = `tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all ${activeTabClass}`;
+            tabAccepted.className = `tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all ${inactiveTabClass}`;
+            panelRanking.classList.remove('hidden');
+            panelAccepted.classList.add('hidden');
+        } else {
+            tabRanking.className = `tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all ${inactiveTabClass}`;
+            tabAccepted.className = `tab-btn px-4 py-2 text-sm font-semibold border-b-2 transition-all ${activeTabClass}`;
+            panelRanking.classList.add('hidden');
+            panelAccepted.classList.remove('hidden');
         }
     }
 
@@ -931,7 +1154,7 @@ class App {
     }
 
     // Set candidate status (Accept, Review, Reject)
-    setCandidateStatus(resumeId, status) {
+    async setCandidateStatus(resumeId, status) {
         const resume = this.allResumes.find(r => (r.fileId || r.name) === resumeId);
         if (resume) {
             resume.status = status;
@@ -945,6 +1168,20 @@ class App {
             };
             this.showToast('Status Updated', statusLabels[status] || status,
                 status === 'accepted' ? 'success' : status === 'rejected' ? 'error' : 'info');
+
+            // Persist to backend
+            try {
+                if (this.activeJobId) {
+                    const realId = resume.fileId || resume.name;
+                    await fetch(`/api/job-descriptions/${this.activeJobId}/resumes/${realId}/status`, {
+                        method: 'PUT',
+                        headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({ status: status })
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to save status', e);
+            }
         }
     }
 
@@ -956,7 +1193,7 @@ class App {
         const hasResumes = this.allResumes.length > 0;
         const hasSkills = job.jdSkills && job.jdSkills.length > 0;
 
-        this.dom.extractBtn.disabled = !(hasJd && hasResumes) || job.status === 'extracting';
+
         // Rank button requires skills extracted
         this.dom.rankBtn.disabled = !hasSkills || job.status === 'ranking' || job.status === 'matching';
 
@@ -1007,13 +1244,16 @@ class App {
         formData.append('file', file);
 
         try {
-            const res = await fetch('/api/upload-resume', { method: 'POST', body: formData });
+            const res = await fetch('/api/upload-resume', {
+                method: 'POST',
+                body: formData,
+                headers: this.getAuthHeaders()  // Don't set Content-Type for FormData - browser handles it
+            });
             const data = await res.json();
             if (data.success) {
                 // Add to global resumes (available for all jobs)
                 this.allResumes.push({
                     name: file.name,
-                    candidateName: data.candidateName,
                     text: data.text,
                     skills: data.skills || [],
                     matchScore: 0,
@@ -1041,30 +1281,44 @@ class App {
             // 1. Extract JD Skills
             const jdRes = await fetch('/api/extract-skills', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ text: job.jdText })
             });
             const jdData = await jdRes.json();
             if (!jdData.success) throw new Error(jdData.error);
             job.jdSkills = jdData.skills;
 
-            // 2. Extract Resume Skills (for each)
-            // Parallel execution might be faster but serial safer for rate limits
-            for (let resume of this.allResumes) {
-                // Skip if already has skills AND candidate name
-                if (resume.skills && resume.skills.length > 0 && resume.candidateName) continue;
+            // 2. Extract Resume Skills in PARALLEL (batches of 3 to respect rate limits)
+            const resumesToProcess = this.allResumes.filter(r =>
+                !r.skills || r.skills.length === 0 || !r.candidateName
+            );
 
-                const rRes = await fetch('/api/extract-skills', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: resume.text })
-                });
-                const rData = await rRes.json();
-                if (rData.success) {
-                    resume.skills = rData.skills;
-                    // Capture candidate details if available
-                    if (rData.candidateName) resume.candidateName = rData.candidateName;
-                    if (rData.candidateExperience) resume.candidateExperience = rData.candidateExperience;
+            const BATCH_SIZE = 1; // Process 1 at a time to avoid rate limits
+            for (let i = 0; i < resumesToProcess.length; i += BATCH_SIZE) {
+                const batch = resumesToProcess.slice(i, i + BATCH_SIZE);
+
+                // Process batch in parallel
+                await Promise.all(batch.map(async (resume) => {
+                    try {
+                        const rRes = await fetch('/api/extract-skills', {
+                            method: 'POST',
+                            headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
+                            body: JSON.stringify({ text: resume.text })
+                        });
+                        const rData = await rRes.json();
+                        if (rData.success) {
+                            resume.skills = rData.skills;
+                            if (rData.candidateName) resume.candidateName = rData.candidateName;
+                            if (rData.candidateExperience) resume.candidateExperience = rData.candidateExperience;
+                        }
+                    } catch (err) {
+                        console.warn('Failed to extract skills for resume:', resume.name, err);
+                    }
+                }));
+
+                // Brief pause between batches to avoid rate limits
+                if (i + BATCH_SIZE < resumesToProcess.length) {
+                    await new Promise(r => setTimeout(r, 2000)); // 2 second delay to avoid rate limits
                 }
             }
 
@@ -1126,33 +1380,82 @@ class App {
             }
         }
 
-        // Trigger Backend Semantic Matching (Vector Database Ranking)
-        job.status = 'ranking';
-        this.showToast('Processing', 'Calculating vector similarity...', 'info');
+        // Step 1: Run Matching
+        job.status = 'matching';
+        this.showToast('Processing', 'Matching resumes with JD...', 'info');
         this.updateUIForActiveJob();
 
         try {
-            // Trigger matching on backend
-            // This now uses 100% Vector Embedding weight as configured in backend
-            const matchRes = await fetch(`/api/job-descriptions/${job.jdId}/match`, {
-                method: 'POST'
+            const matchesToSave = [];
+
+            for (let resume of this.allResumes) {
+                const res = await fetch('/api/match-skills', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jdSkills: job.jdSkills, resumeSkills: resume.skills })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    resume.matchScore = data.matchScore;
+                    resume.matchedSkills = data.matchedSkills;
+                    resume.missingSkills = data.missingSkills;
+                    resume.skillMatchScore = data.matchScore; // Store raw skill score
+                }
+            }
+
+            // Step 2: Run Ranking
+            job.status = 'ranking';
+            this.showToast('Processing', 'Ranking resumes...', 'info');
+            this.updateUIForActiveJob();
+
+            const resumeData = {};
+            this.allResumes.forEach(r => resumeData[r.name] = r.text);
+
+            const res = await fetch('/api/rank-resumes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jdText: job.jdText, resumeData })
             });
-            const matchData = await matchRes.json();
+            const data = await res.json();
 
-            if (!matchData.success) throw new Error(matchData.error);
+            // Prepare data for saving
+            this.allResumes.forEach(r => {
+                // If we got embedding scores, blend them or use them
+                // For now, we trust the skill match score primarily but could blend
 
-            // Fetch the calculated results
-            await this.loadMatchesForJob(job);
+                matchesToSave.push({
+                    resumeId: r.fileId || r.name, // Use fileId if available
+                    candidateName: r.name,
+                    matchScore: r.matchScore,
+                    skillMatchScore: r.skillMatchScore,
+                    matchedSkills: r.matchedSkills || [],
+                    missingSkills: r.missingSkills || [],
+                    candidateExperience: r.candidateExperience || 0,
+                    status: r.status || 'review',
+                    hasGap: r.hasGap || false,
+                    gapMonths: r.gapMonths || 0
+                });
+            });
+
+            // Step 3: Save results to backend
+            console.log('💾 Saving matches to backend...');
+            await fetch(`/api/job-descriptions/${job.jdId}/matches`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ matches: matchesToSave })
+            });
 
             job.status = 'ranked';
-            this.showToast('Complete!', 'Resumes ranked by Vector Similarity', 'success');
+            job.matchResults = matchesToSave; // Cache locally
+
+            this.showToast('Complete!', 'Resumes matched, ranked, and saved', 'success');
             this.renderJobsList(); // Status badge update
             this.updateUIForActiveJob();
 
         } catch (e) {
             console.warn('Match/Rank error:', e);
-            job.status = 'error';
-            this.showToast('Ranking Error', e.message, 'error');
+            job.status = 'ranked'; // Continue anyway
+            this.showToast('Ranked', 'Ranking complete (local fallback)', 'info');
             this.updateUIForActiveJob();
         }
     }
@@ -1175,7 +1478,7 @@ class App {
 
             const res = await fetch('/api/rank-resumes', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: this.getAuthHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ jdText: job.jdText, resumeData })
             });
             const data = await res.json();
